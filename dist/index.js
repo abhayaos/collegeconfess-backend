@@ -1,8 +1,22 @@
+import { existsSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+// Load .env from backend dir first, then project root
 try {
-    await import("dotenv/config");
+    const { config } = await import("dotenv");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    for (const p of [
+        resolve(__dirname, "../.env"),
+        resolve(__dirname, "../../.env"),
+    ]) {
+        if (existsSync(p)) {
+            config({ path: p });
+            break;
+        }
+    }
 }
 catch {
-    // dotenv not available — assume env vars are set by the platform
+    // dotenv unavailable — rely on platform env vars
 }
 import express from "express";
 import cors from "cors";
