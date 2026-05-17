@@ -10,8 +10,8 @@ const app = express();
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      process.env.FRONTEND_DEV_URL,
+      'https://collegeconfess.vercel.app',
+      'https://collegeconfess.vercel.app',
       'http://localhost:5173',
       'http://localhost:3000',
     ].filter(Boolean);
