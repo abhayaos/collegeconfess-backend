@@ -7,15 +7,14 @@ const confessionRoutes = require('./routes/confessions');
 
 const app = express();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+const allowedOrigins = isProduction
+  ? [process.env.FRONTEND_URL]
+  : [process.env.FRONTEND_DEV_URL, 'http://localhost:5173', 'http://localhost:3000'];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      'https://collegeconfess.vercel.app',
-      'https://collegeconfess.vercel.app',
-      'http://localhost:5173',
-      'http://localhost:3000',
-    ].filter(Boolean);
-    
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
