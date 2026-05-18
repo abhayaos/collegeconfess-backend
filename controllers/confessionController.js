@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const Confession = require('../models/Confession');
+const Log = require('../models/Log');
 const profanityFilter = require('../middleware/profanityFilter');
 
 function generateShortId() {
@@ -32,7 +33,7 @@ function hashIP(ip) {
 
 exports.create = async (req, res) => {
   try {
-    let { text, category, title } = req.body;
+    let { text, category, title, collegeId } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Text is required' });
     }
@@ -46,26 +47,48 @@ exports.create = async (req, res) => {
     if (recent && Date.now() - new Date(recent.createdAt).getTime() < 30000) {
       return res.status(429).json({ message: 'Please wait 30 seconds before posting again' });
     }
+
+    // Validate category against allowed values
+    const allowedCategories = ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'];
+    if (category && !allowedCategories.includes(category)) {
+      return res.status(400).json({ message: 'Invalid category' });
+    }
+
     const confession = await Confession.create({
       shortId: await getUniqueShortId(),
       title: title.trim().slice(0, 100),
       text,
       category: category || 'love',
       anonymousName: randomName(),
+      collegeId: collegeId ? collegeId.toLowerCase() : null,
+      userId: req.body.userId || null,
       ipHash,
     });
+    
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      io.emit('new-confession', confession);
+      if (collegeId) {
+        io.to(collegeId.toLowerCase()).emit('new-confession', confession);
+      }
+    }
+    
     res.status(201).json(confession);
   } catch (err) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('Confession creation error:', err);
+    res.status(500).json({ message: 'Server error', details: err.message });
   }
 };
 
 exports.getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query;
+    const { page = 1, limit = 10, search, collegeId } = req.query;
     const query = {};
     if (search) {
       query.text = { $regex: search, $options: 'i' };
+    }
+    if (collegeId) {
+      query.collegeId = collegeId.toLowerCase();
     }
     const confessions = await Confession.find(query)
       .sort({ createdAt: -1 })
@@ -76,9 +99,11 @@ exports.getAll = async (req, res) => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     
+    const collegeQuery = collegeId ? { collegeId: collegeId.toLowerCase() } : {};
+    
     const [students, today] = await Promise.all([
-      Confession.distinct('ipHash'),
-      Confession.countDocuments({ createdAt: { $gte: startOfToday } })
+      Confession.distinct('ipHash', collegeQuery),
+      Confession.countDocuments({ ...collegeQuery, createdAt: { $gte: startOfToday } })
     ]);
     
     res.json({ 
@@ -88,9 +113,29 @@ exports.getAll = async (req, res) => {
       totalPages: Math.ceil(total / limit),
       stats: {
         total,
-        students: students.length,
-        today
+        students: (students && students.length) || 0,
+        today: today || 0
       }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getStats = async (req, res) => {
+  try {
+    const total = await Confession.countDocuments();
+    
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    
+    const today = await Confession.countDocuments({ createdAt: { $gte: startOfToday } });
+    const students = await Confession.distinct('ipHash');
+    
+    res.json({
+      total,
+      students: (students && students.length) || 0,
+      today: today || 0
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -154,6 +199,54 @@ exports.trending = async (req, res) => {
       .sort({ likes: -1, createdAt: -1 })
       .limit(10);
     res.json(confessions);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getUserStats = async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    const confessions = await Confession.find({ userId: username });
+    const totalConfessions = confessions.length;
+    const totalLikes = confessions.reduce((sum, c) => sum + (c.likes || 0), 0);
+    
+    res.json({
+      confessions: totalConfessions,
+      likes: totalLikes
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.deleteConfession = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminId } = req.body;
+    
+    // Check if user is admin
+    if (adminId !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    
+    const confession = await Confession.findByIdAndDelete(id);
+    if (!confession) {
+      return res.status(404).json({ message: 'Confession not found' });
+    }
+    
+    // Emit socket event for deletion
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      io.emit('delete-confession', { id });
+      if (confession.collegeId) {
+        io.to(confession.collegeId).emit('delete-confession', { id });
+      }
+    }
+    
+    await Log.create({ action: 'delete-confession', target: 'confession', targetId: id, adminId, details: `Deleted confession ${confession.shortId || id}` });
+    res.json({ message: 'Confession deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }

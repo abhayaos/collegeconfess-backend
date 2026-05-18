@@ -11,14 +11,17 @@ const confessionSchema = new mongoose.Schema({
   text: { type: String, required: true, maxlength: 5000 },
   category: {
     type: String,
-    enum: ['love', 'crush', 'study'],
+    enum: ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'],
     default: 'love',
   },
   anonymousName: { type: String, required: true },
+  collegeId: { type: String, lowercase: true },
+  userId: { type: String },
   likes: { type: Number, default: 0 },
   likedIPs: [{ type: String }],
   comments: [commentSchema],
   ipHash: { type: String },
+  verified: { type: Boolean, default: false },
 }, { timestamps: true });
 
 confessionSchema.index({ text: 'text' });
