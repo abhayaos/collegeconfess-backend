@@ -8,7 +8,9 @@ require('dotenv/config');
 const confessionRoutes = require('./routes/confessions');
 const authRoutes = require('./routes/auth');
 const collegeRoutes = require('./routes/colleges');
+const roomRoutes = require('./routes/rooms');
 const logRoutes = require('./routes/logs');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 const server = http.createServer(app);
@@ -65,7 +67,9 @@ app.use((err, req, res, next) => {
 app.use('/api/confessions', confessionRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/colleges', collegeRoutes);
+app.use('/api/rooms', roomRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {
@@ -74,6 +78,12 @@ io.on('connection', (socket) => {
 
   socket.on('leave-room', (roomId) => {
     socket.leave(roomId);
+  });
+
+  socket.on('register-user', (userId) => {
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
   });
 });
 

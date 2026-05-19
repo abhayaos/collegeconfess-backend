@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const Confession = require('../models/Confession');
+const Notification = require('../models/Notification');
 const Log = require('../models/Log');
 const profanityFilter = require('../middleware/profanityFilter');
 
@@ -168,6 +169,19 @@ exports.like = async (req, res) => {
     confession.likedIPs.push(ipHash);
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
+
+    if (confession.userId && confession.userId !== req.body.userId) {
+      const notification = await Notification.create({
+        userId: confession.userId,
+        type: 'like',
+        message: `Someone liked your confession`,
+        confessionId: confession.shortId,
+      });
+      const io = req.app.get('io');
+      io.to(`user:${confession.userId}`).emit('new-notification', notification);
+      io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
+    }
+
     res.json({ likes: confession.likes });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -187,6 +201,19 @@ exports.comment = async (req, res) => {
     confession.comments.push({ text: text.trim().slice(0, 200) });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
+
+    if (confession.userId && confession.userId !== req.body.userId) {
+      const notification = await Notification.create({
+        userId: confession.userId,
+        type: 'comment',
+        message: `Someone commented on your confession`,
+        confessionId: confession.shortId,
+      });
+      const io = req.app.get('io');
+      io.to(`user:${confession.userId}`).emit('new-notification', notification);
+      io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
+    }
+
     res.status(201).json(confession);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

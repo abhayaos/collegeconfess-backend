@@ -7,7 +7,7 @@ require('dotenv/config');
 const router = express.Router();
 
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, collegeId } = req.body;
   
   const adminUsername = 'admin';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
@@ -23,6 +23,9 @@ router.post('/login', async (req, res) => {
   
   const user = await User.findOne({ username: username.toLowerCase() });
   if (user && user.password === password) {
+    if (user.collegeId && user.collegeId !== collegeId?.toUpperCase()) {
+      return res.status(401).json({ message: 'College ID does not match' });
+    }
     const token = jwt.sign(
       { id: user.username, role: user.role, name: user.name },
       process.env.JWT_SECRET,

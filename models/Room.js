@@ -1,10 +1,15 @@
 const mongoose = require('mongoose');
 
-const collegeSchema = new mongoose.Schema({
-  name: {
+const roomSchema = new mongoose.Schema({
+  roomId: {
     type: String,
     required: true,
     unique: true,
+    uppercase: true,
+  },
+  name: {
+    type: String,
+    required: true,
     lowercase: true,
   },
   description: String,
@@ -14,4 +19,4 @@ const collegeSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model('College', collegeSchema);
+module.exports = mongoose.model('Room', roomSchema);
