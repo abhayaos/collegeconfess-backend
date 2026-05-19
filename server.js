@@ -16,7 +16,11 @@ const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
+  pingInterval: 10000,
+  pingTimeout: 5000,
 });
 
 app.set('trust proxy', 1);
@@ -45,7 +49,18 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ message: 'Invalid JSON payload' });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ message: 'Payload too large' });
+  }
+  next(err);
+});
 
 app.use('/api/confessions', confessionRoutes);
 app.use('/api/auth', authRoutes);

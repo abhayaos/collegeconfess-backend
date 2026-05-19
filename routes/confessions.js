@@ -4,7 +4,7 @@ const rateLimiter = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
-router.post('/', rateLimiter, ctrl.create);
+router.post('/', rateLimiter.strict, ctrl.create);
 router.get('/', ctrl.getAll);
 router.get('/stats', ctrl.getStats);
 router.get('/trending', ctrl.trending);
