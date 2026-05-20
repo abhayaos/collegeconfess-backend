@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const Log = require('../models/Log');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', authenticate, requireAdmin, async (req, res) => {
   try {
     const logs = await Log.find().sort({ createdAt: -1 }).limit(100);
     res.json(logs);
@@ -11,7 +12,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.delete('/', async (req, res) => {
+router.delete('/', authenticate, requireAdmin, async (req, res) => {
   try {
     await Log.deleteMany({});
     res.json({ message: 'Logs cleared' });

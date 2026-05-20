@@ -1,5 +1,6 @@
 const express = require('express');
 const Room = require('../models/Room');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -12,10 +13,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', authenticate, requireAdmin, async (req, res) => {
   try {
     const { roomId, name, description } = req.body;
-    
+
     if (!roomId || !name) {
       return res.status(400).json({ message: 'Room ID and name are required' });
     }
@@ -40,7 +41,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     await Room.findByIdAndDelete(req.params.id);
     res.json({ message: 'Room deleted' });

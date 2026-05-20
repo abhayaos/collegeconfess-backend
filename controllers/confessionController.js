@@ -1,11 +1,12 @@
 const crypto = require('crypto');
 const Confession = require('../models/Confession');
+const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Log = require('../models/Log');
 const profanityFilter = require('../middleware/profanityFilter');
 
 function generateShortId() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 999999).toString();
 }
 
 async function getUniqueShortId() {
@@ -32,6 +33,10 @@ function hashIP(ip) {
   return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
 }
 
+function sanitize(str) {
+  return str.replace(/[<>]/g, '').trim();
+}
+
 exports.create = async (req, res) => {
   try {
     let { text, category, title, collegeId } = req.body;
@@ -41,7 +46,8 @@ exports.create = async (req, res) => {
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Title is required' });
     }
-    text = profanityFilter(text.trim());
+    text = profanityFilter(sanitize(text));
+    title = sanitize(title);
     const ipHash = hashIP(req.ip);
     const recent = await Confession.findOne({ ipHash })
       .sort({ createdAt: -1 });
@@ -49,23 +55,24 @@ exports.create = async (req, res) => {
       return res.status(429).json({ message: 'Please wait 30 seconds before posting again' });
     }
 
-    // Validate category against allowed values
     const allowedCategories = ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'];
     if (category && !allowedCategories.includes(category)) {
       return res.status(400).json({ message: 'Invalid category' });
     }
 
+    const userId = req.user ? req.user.username : (req.body.userId || null);
+
     const confession = await Confession.create({
       shortId: await getUniqueShortId(),
       title: title.trim().slice(0, 100),
-      text,
+      text: text.trim().slice(0, 5000),
       category: category || 'love',
       anonymousName: randomName(),
       collegeId: collegeId ? collegeId.toLowerCase() : null,
-      userId: req.body.userId || null,
+      userId,
       ipHash,
     });
-    
+
     if (req.app.get('io')) {
       const io = req.app.get('io');
       io.emit('new-confession', confession);
@@ -73,11 +80,11 @@ exports.create = async (req, res) => {
         io.to(collegeId.toLowerCase()).emit('new-confession', confession);
       }
     }
-    
+
     res.status(201).json(confession);
   } catch (err) {
     console.error('Confession creation error:', err);
-    res.status(500).json({ message: 'Server error', details: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -86,7 +93,8 @@ exports.getAll = async (req, res) => {
     const { page = 1, limit = 10, search, collegeId } = req.query;
     const query = {};
     if (search) {
-      query.text = { $regex: search, $options: 'i' };
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.text = { $regex: escaped, $options: 'i' };
     }
     if (collegeId) {
       query.collegeId = collegeId.toLowerCase();
@@ -96,25 +104,26 @@ exports.getAll = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(Number(limit));
     const total = await Confession.countDocuments(query);
-    
+
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    
+
     const collegeQuery = collegeId ? { collegeId: collegeId.toLowerCase() } : {};
-    
+
+    const userQuery = collegeId ? { collegeId: collegeId.toUpperCase() } : {};
     const [students, today] = await Promise.all([
-      Confession.distinct('ipHash', collegeQuery),
+      User.countDocuments(userQuery),
       Confession.countDocuments({ ...collegeQuery, createdAt: { $gte: startOfToday } })
     ]);
-    
-    res.json({ 
-      confessions, 
-      total, 
-      page: Number(page), 
+
+    res.json({
+      confessions,
+      total,
+      page: Number(page),
       totalPages: Math.ceil(total / limit),
       stats: {
         total,
-        students: (students && students.length) || 0,
+        students: students || 0,
         today: today || 0
       }
     });
@@ -126,16 +135,16 @@ exports.getAll = async (req, res) => {
 exports.getStats = async (req, res) => {
   try {
     const total = await Confession.countDocuments();
-    
+
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    
+
     const today = await Confession.countDocuments({ createdAt: { $gte: startOfToday } });
-    const students = await Confession.distinct('ipHash');
-    
+    const students = await User.countDocuments();
+
     res.json({
       total,
-      students: (students && students.length) || 0,
+      students: students || 0,
       today: today || 0
     });
   } catch (err) {
@@ -145,8 +154,8 @@ exports.getStats = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    const confession = await Confession.findOne({ 
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }] 
+    const confession = await Confession.findOne({
+      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
     });
     if (!confession) return res.status(404).json({ message: 'Not found' });
     res.json(confession);
@@ -158,8 +167,8 @@ exports.getOne = async (req, res) => {
 exports.like = async (req, res) => {
   try {
     const ipHash = hashIP(req.ip);
-    const confession = await Confession.findOne({ 
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }] 
+    const confession = await Confession.findOne({
+      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
     });
     if (!confession) return res.status(404).json({ message: 'Not found' });
     if (confession.likedIPs.includes(ipHash)) {
@@ -170,7 +179,8 @@ exports.like = async (req, res) => {
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
-    if (confession.userId && confession.userId !== req.body.userId) {
+    const userId = req.user ? req.user.username : (req.body.userId || null);
+    if (confession.userId && confession.userId !== userId) {
       const notification = await Notification.create({
         userId: confession.userId,
         type: 'like',
@@ -194,15 +204,16 @@ exports.comment = async (req, res) => {
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Comment text is required' });
     }
-    const confession = await Confession.findOne({ 
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }] 
+    const confession = await Confession.findOne({
+      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
     });
     if (!confession) return res.status(404).json({ message: 'Not found' });
-    confession.comments.push({ text: text.trim().slice(0, 200) });
+    confession.comments.push({ text: sanitize(text).slice(0, 200) });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
-    if (confession.userId && confession.userId !== req.body.userId) {
+    const userId = req.user ? req.user.username : (req.body.userId || null);
+    if (confession.userId && confession.userId !== userId) {
       const notification = await Notification.create({
         userId: confession.userId,
         type: 'comment',
@@ -234,11 +245,11 @@ exports.trending = async (req, res) => {
 exports.getUserStats = async (req, res) => {
   try {
     const { username } = req.params;
-    
+
     const confessions = await Confession.find({ userId: username });
     const totalConfessions = confessions.length;
     const totalLikes = confessions.reduce((sum, c) => sum + (c.likes || 0), 0);
-    
+
     res.json({
       confessions: totalConfessions,
       likes: totalLikes
@@ -251,19 +262,16 @@ exports.getUserStats = async (req, res) => {
 exports.deleteConfession = async (req, res) => {
   try {
     const { id } = req.params;
-    const { adminId } = req.body;
-    
-    // Check if user is admin
-    if (adminId !== 'admin') {
+
+    if (!req.user || req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Admin access required' });
     }
-    
+
     const confession = await Confession.findByIdAndDelete(id);
     if (!confession) {
       return res.status(404).json({ message: 'Confession not found' });
     }
-    
-    // Emit socket event for deletion
+
     if (req.app.get('io')) {
       const io = req.app.get('io');
       io.emit('delete-confession', { id });
@@ -271,8 +279,8 @@ exports.deleteConfession = async (req, res) => {
         io.to(confession.collegeId).emit('delete-confession', { id });
       }
     }
-    
-    await Log.create({ action: 'delete-confession', target: 'confession', targetId: id, adminId, details: `Deleted confession ${confession.shortId || id}` });
+
+    await Log.create({ action: 'delete-confession', target: 'confession', targetId: id, adminId: req.user.id, details: `Deleted confession ${confession.shortId || id}` });
     res.json({ message: 'Confession deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

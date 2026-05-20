@@ -2,8 +2,10 @@ const Notification = require('../models/Notification');
 
 exports.getNotifications = async (req, res) => {
   try {
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ message: 'userId is required' });
+    const userId = req.query.userId || req.user.id;
+    if (userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     const notifications = await Notification.find({ userId })
       .sort({ createdAt: -1 })
@@ -18,12 +20,13 @@ exports.getNotifications = async (req, res) => {
 
 exports.markRead = async (req, res) => {
   try {
-    const notification = await Notification.findByIdAndUpdate(
-      req.params.id,
-      { read: true },
-      { new: true }
-    );
+    const notification = await Notification.findById(req.params.id);
     if (!notification) return res.status(404).json({ message: 'Not found' });
+    if (notification.userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    notification.read = true;
+    await notification.save();
     res.json(notification);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -32,8 +35,10 @@ exports.markRead = async (req, res) => {
 
 exports.markAllRead = async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ message: 'userId is required' });
+    const userId = req.body.userId || req.user.id;
+    if (userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     await Notification.updateMany({ userId, read: false }, { read: true });
     res.json({ message: 'All marked as read' });
@@ -44,8 +49,10 @@ exports.markAllRead = async (req, res) => {
 
 exports.getUnreadCount = async (req, res) => {
   try {
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ message: 'userId is required' });
+    const userId = req.query.userId || req.user.id;
+    if (userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     const count = await Notification.countDocuments({ userId, read: false });
     res.json({ count });

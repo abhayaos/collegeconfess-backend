@@ -1,6 +1,7 @@
 const express = require('express');
 const College = require('../models/College');
 const Log = require('../models/Log');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -13,10 +14,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', authenticate, requireAdmin, async (req, res) => {
   try {
     const { collegeId, name, description } = req.body;
-    
+
     if (!collegeId || collegeId.length !== 6) {
       return res.status(400).json({ message: 'College ID must be 6 characters' });
     }
@@ -39,18 +40,18 @@ router.post('/', async (req, res) => {
       name: name.toLowerCase(),
       description,
     });
-    await Log.create({ action: 'create-college', target: 'college', targetId: collegeId.toUpperCase(), adminId: 'admin', details: `Created college ${name} (${collegeId.toUpperCase()})` });
+    await Log.create({ action: 'create-college', target: 'college', targetId: collegeId.toUpperCase(), adminId: req.user.id, details: `Created college ${name} (${collegeId.toUpperCase()})` });
     res.status(201).json(college);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     const college = await College.findByIdAndDelete(req.params.id);
     if (college) {
-      await Log.create({ action: 'delete-college', target: 'college', targetId: college.collegeId, adminId: 'admin', details: `Deleted college ${college.name} (${college.collegeId})` });
+      await Log.create({ action: 'delete-college', target: 'college', targetId: college.collegeId, adminId: req.user.id, details: `Deleted college ${college.name} (${college.collegeId})` });
     }
     res.json({ message: 'College deleted' });
   } catch (err) {
