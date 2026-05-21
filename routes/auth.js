@@ -229,6 +229,50 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
+router.get('/user/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({ id: user.username, name: user.name, role: user.role, verificationStatus: user.verificationStatus, gender: user.gender });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/me', authenticate, async (req, res) => {
+  try {
+    const { name, gender } = req.body;
+    const user = await User.findOne({ username: req.user.id });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (name) {
+      if (name.length > 100) return res.status(400).json({ message: 'Name too long' });
+      user.name = name.trim();
+    }
+    if (gender) {
+      if (!['male', 'female', 'other'].includes(gender)) return res.status(400).json({ message: 'Invalid gender' });
+      user.gender = gender;
+    }
+    await user.save();
+    res.json({
+      id: user.username,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      authProvider: user.authProvider,
+      verificationStatus: user.verificationStatus,
+      gender: user.gender,
+      collegeId: user.collegeId,
+    });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/users', authenticate, requireAdmin, async (req, res) => {
   try {
     const users = await User.find().select('-password -idCard');

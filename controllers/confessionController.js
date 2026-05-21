@@ -90,11 +90,14 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, collegeId } = req.query;
+    const { page = 1, limit = 10, search, category, collegeId } = req.query;
     const query = {};
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.text = { $regex: escaped, $options: 'i' };
+    }
+    if (category && category !== 'all') {
+      query.category = category;
     }
     if (collegeId) {
       query.collegeId = collegeId.toLowerCase();
