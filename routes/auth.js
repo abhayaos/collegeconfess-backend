@@ -231,11 +231,11 @@ router.get('/me', authenticate, async (req, res) => {
 
 router.get('/user/:username', async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender');
+    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json({ id: user.username, name: user.name, role: user.role, verificationStatus: user.verificationStatus, gender: user.gender });
+    res.json({ id: user.username, name: user.name, role: user.role, verificationStatus: user.verificationStatus, gender: user.gender, createdAt: user.createdAt, collegeId: user.collegeId });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }

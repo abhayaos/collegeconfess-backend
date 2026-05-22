@@ -19,10 +19,9 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  transports: ['polling', 'websocket'],
-  allowEIO3: true,
-  pingInterval: 10000,
-  pingTimeout: 5000,
+  transports: ['websocket', 'polling'],
+  pingInterval: 5000,
+  pingTimeout: 3000,
 });
 
 app.set('trust proxy', 1);
@@ -32,7 +31,8 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'https://collegeconfess.vercel.app'
+  'https://collegeconfess.vercel.app',
+  'https://guffsansar.vercel.app'
 ];
 
 app.use(
@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('College Confess API running!');
+  res.send('Guff Sansar API running!');
 });
 
 const PORT = process.env.PORT || 5000;
