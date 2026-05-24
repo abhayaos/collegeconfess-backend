@@ -1,6 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const http = require('http');
 const { Server } = require('socket.io');
 require('dotenv/config');
@@ -15,9 +17,24 @@ const galiRoutes = require('./routes/gali');
 
 const app = express();
 const server = http.createServer(app);
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://guffsansar.vercel.app',
+];
+
+const corsCheck = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  if (allowedOrigins.includes(origin)) return callback(null, true);
+  if (origin.endsWith('.vercel.app')) return callback(null, true);
+  callback(new Error('Not allowed by CORS'));
+};
+
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: corsCheck,
     methods: ['GET', 'POST']
   },
   transports: ['websocket', 'polling'],
@@ -28,29 +45,20 @@ const io = new Server(server, {
 app.set('trust proxy', 1);
 app.set('io', io);
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://guffsansar.vercel.app',
-  'https://guffsansar.vercel.app'
-];
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      if (origin.endsWith('.vercel.app')) {
-        return callback(null, true);
-      }
-      callback(null, true);
-    },
-    credentials: true,
-  })
-);
+app.use(helmet());
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+app.use(cors({ origin: corsCheck, credentials: true }));
+app.use(cookieParser());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

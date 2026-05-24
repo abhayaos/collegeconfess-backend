@@ -16,8 +16,11 @@ exports.create = async (req, res) => {
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Text is required' });
     }
+    if (text.length > 500) {
+      return res.status(400).json({ message: 'Text must be under 500 characters' });
+    }
     const gali = await Gali.create({
-      text: text.trim().slice(0, 500),
+      text: text.trim(),
       anonymousName: randomName(),
     });
     res.status(201).json(gali);

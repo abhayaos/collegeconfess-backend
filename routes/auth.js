@@ -1,7 +1,9 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
+const Confession = require('../models/Confession');
 const Log = require('../models/Log');
 const rateLimiter = require('../middleware/rateLimiter');
 const { authenticate, requireAdmin } = require('../middleware/auth');
@@ -12,12 +14,37 @@ const router = express.Router();
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
-function generateToken(user) {
-  return jwt.sign(
-    { id: user.username, role: user.role, name: user.name },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+const isSecure = process.env.NODE_ENV === 'production';
+
+const adminPasswordHash = process.env.ADMIN_PASSWORD
+  ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 12)
+  : null;
+
+function generateTokens(user) {
+  const payload = { id: user.username, role: user.role, name: user.name, tokenVersion: user.tokenVersion };
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+  const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  return { accessToken, refreshToken };
+}
+
+function setRefreshCookie(res, token) {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+}
+
+function setAccessCookie(res, token) {
+  res.cookie('accessToken', token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 15 * 60 * 1000,
+  });
 }
 
 router.post('/google', rateLimiter, async (req, res) => {
@@ -64,35 +91,24 @@ router.post('/google', rateLimiter, async (req, res) => {
       });
     }
 
-    const token = generateToken(user);
+    const { accessToken, refreshToken } = generateTokens(user);
+    setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
+
+    const userData = {
+      id: user.username,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      authProvider: user.authProvider,
+      verificationStatus: user.verificationStatus,
+    };
 
     if (!user.gender) {
-      return res.json({
-        token,
-        user: {
-          id: user.username,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          authProvider: user.authProvider,
-          verificationStatus: user.verificationStatus,
-        },
-        onboarding: true,
-      });
+      return res.json({ token: accessToken, user: userData, onboarding: true });
     }
 
-    res.json({
-      token,
-      user: {
-        id: user.username,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        authProvider: user.authProvider,
-        verificationStatus: user.verificationStatus,
-      },
-      onboarding: false,
-    });
+    res.json({ token: accessToken, user: userData, onboarding: false });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ message: 'Invalid Google credential' });
@@ -128,10 +144,12 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
     user.verificationStatus = 'pending';
     await user.save();
 
-    const newToken = generateToken(user);
+    const { accessToken, refreshToken } = generateTokens(user);
+    setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
 
     res.json({
-      token: newToken,
+      token: accessToken,
       user: {
         id: user.username,
         name: user.name,
@@ -155,19 +173,18 @@ router.post('/login', rateLimiter, async (req, res) => {
     }
 
     const adminUsername = 'admin';
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    if (!adminPassword) {
+    if (!adminPasswordHash) {
       return res.status(500).json({ message: 'Server configuration error' });
     }
 
     if (username === adminUsername) {
-      if (password === adminPassword) {
-        const token = jwt.sign(
-          { id: 'admin', role: 'admin' },
-          process.env.JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-        return res.json({ token, user: { id: 'admin', name: 'Admin', role: 'admin' } });
+      if (bcrypt.compareSync(password, adminPasswordHash)) {
+        const payload = { id: 'admin', role: 'admin', tokenVersion: 0 };
+        const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+        const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        setRefreshCookie(res, refreshToken);
+        setAccessCookie(res, accessToken);
+        return res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
       }
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -186,13 +203,11 @@ router.post('/login', rateLimiter, async (req, res) => {
       return res.status(401).json({ message: 'College ID does not match' });
     }
 
-    const token = jwt.sign(
-      { id: user.username, role: user.role, name: user.name },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const { accessToken, refreshToken } = generateTokens(user);
+    setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
     res.json({
-      token,
+      token: accessToken,
       user: {
         id: user.username,
         name: user.name,
@@ -206,6 +221,68 @@ router.post('/login', rateLimiter, async (req, res) => {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
   }
+});
+
+router.post('/refresh', rateLimiter, async (req, res) => {
+  const token = req.cookies?.refreshToken;
+  if (!token) {
+    return res.status(401).json({ message: 'No refresh token' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({ message: 'Invalid token type' });
+    }
+    if (decoded.role !== 'admin') {
+      const user = await User.findOne({ username: decoded.id });
+      if (!user || user.tokenVersion !== decoded.tokenVersion) {
+        return res.status(401).json({ message: 'Token revoked, please login again' });
+      }
+      const tokens = generateTokens(user);
+      setRefreshCookie(res, tokens.refreshToken);
+      setAccessCookie(res, tokens.accessToken);
+      res.json({
+        token: tokens.accessToken,
+        user: {
+          id: user.username,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          authProvider: user.authProvider,
+          verificationStatus: user.verificationStatus,
+          gender: user.gender,
+          collegeId: user.collegeId,
+        },
+        needsOnboarding: !user.gender,
+        collegeId: user.collegeId,
+      });
+    } else {
+      const payload = { id: 'admin', role: 'admin', tokenVersion: 0 };
+      const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+      const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      setRefreshCookie(res, refreshToken);
+      setAccessCookie(res, accessToken);
+      res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
+    }
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+  }
+});
+
+router.post('/logout', rateLimiter, async (req, res) => {
+  const token = req.cookies?.accessToken;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.role !== 'admin') {
+        await User.updateOne({ username: decoded.id }, { $inc: { tokenVersion: 1 } });
+      }
+    } catch {
+    }
+  }
+  res.clearCookie('accessToken', { path: '/' });
+  res.clearCookie('refreshToken', { path: '/' });
+  res.json({ message: 'Logged out' });
 });
 
 router.get('/me', authenticate, async (req, res) => {
@@ -229,7 +306,7 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
-router.get('/user/:username', async (req, res) => {
+router.get('/user/:username', rateLimiter, authenticate, async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId');
     if (!user) {
@@ -241,7 +318,7 @@ router.get('/user/:username', async (req, res) => {
   }
 });
 
-router.put('/me', authenticate, async (req, res) => {
+router.put('/me', rateLimiter, authenticate, async (req, res) => {
   try {
     const { name, gender } = req.body;
     const user = await User.findOne({ username: req.user.id });
@@ -273,7 +350,7 @@ router.put('/me', authenticate, async (req, res) => {
   }
 });
 
-router.get('/users', authenticate, requireAdmin, async (req, res) => {
+router.get('/users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const users = await User.find().select('-password -idCard');
     res.json(users);
@@ -282,7 +359,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/users', authenticate, requireAdmin, async (req, res) => {
+router.post('/users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const { username, password, name, collegeId } = req.body;
     if (!username || !password || !name) {
@@ -312,7 +389,7 @@ router.post('/users', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/users/:username', authenticate, requireAdmin, async (req, res) => {
+router.put('/users/:username', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const { collegeId } = req.body;
     const username = req.params.username.toLowerCase();
@@ -333,7 +410,25 @@ router.put('/users/:username', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/users/:username', authenticate, requireAdmin, async (req, res) => {
+router.delete('/me', rateLimiter, authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'admin') {
+      return res.status(400).json({ message: 'Admin accounts cannot be deleted via this endpoint' });
+    }
+    const deleted = await User.findOneAndDelete({ username: req.user.id });
+    if (!deleted) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    await Confession.deleteMany({ userId: req.user.id });
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    res.json({ message: 'Account deleted' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/users/:username', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const username = req.params.username.toLowerCase();
     const deleted = await User.findOneAndDelete({ username });
@@ -347,7 +442,7 @@ router.delete('/users/:username', authenticate, requireAdmin, async (req, res) =
   }
 });
 
-router.get('/verify-users', authenticate, requireAdmin, async (req, res) => {
+router.get('/verify-users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const users = await User.find({
       verificationStatus: { $in: ['pending', 'verified', 'rejected'] },
@@ -358,7 +453,7 @@ router.get('/verify-users', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/verify-user/:id', authenticate, requireAdmin, async (req, res) => {
+router.put('/verify-user/:id', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const { status } = req.body;
     if (!['verified', 'rejected'].includes(status)) {

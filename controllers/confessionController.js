@@ -63,7 +63,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ message: 'Title or description is required' });
     }
     text = profanityFilter(sanitize(text || ''));
-    title = sanitize(title || '');
+    title = profanityFilter(sanitize(title || ''));
     const ipHash = hashIP(req.ip);
     const recent = await Confession.findOne({ ipHash })
       .sort({ createdAt: -1 });
@@ -76,7 +76,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ message: 'Invalid category' });
     }
 
-    const userId = req.user ? req.user.username : (req.body.userId || null);
+    const userId = req.user ? req.user.username : null;
 
     const confession = await Confession.create({
       shortId: await getUniqueShortId(),
@@ -109,6 +109,9 @@ exports.getAll = async (req, res) => {
     const { page = 1, limit = 10, search, category, collegeId } = req.query;
     const query = {};
     if (search) {
+      if (search.length > 200) {
+        return res.status(400).json({ message: 'Search query too long' });
+      }
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.text = { $regex: escaped, $options: 'i' };
     }
@@ -194,7 +197,7 @@ exports.like = async (req, res) => {
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
-    const userId = req.user ? req.user.username : (req.body.userId || null);
+    const userId = req.user ? req.user.username : null;
     if (confession.userId && confession.userId !== userId) {
       const notification = await Notification.create({
         userId: confession.userId,
@@ -221,11 +224,11 @@ exports.comment = async (req, res) => {
     }
     const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
-    confession.comments.push({ text: sanitize(text).slice(0, 200) });
+    confession.comments.push({ text: profanityFilter(sanitize(text)).slice(0, 200) });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
-    const userId = req.user ? req.user.username : (req.body.userId || null);
+    const userId = req.user ? req.user.username : null;
     if (confession.userId && confession.userId !== userId) {
       const notification = await Notification.create({
         userId: confession.userId,
@@ -256,11 +259,11 @@ exports.reply = async (req, res) => {
     const parentComment = confession.comments.id(req.params.commentId);
     if (!parentComment) return res.status(404).json({ message: 'Comment not found' });
 
-    confession.comments.push({ text: sanitize(text).slice(0, 200), parentId: parentComment._id });
+    confession.comments.push({ text: profanityFilter(sanitize(text)).slice(0, 200), parentId: parentComment._id });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
-    const userId = req.user ? req.user.username : (req.body.userId || null);
+    const userId = req.user ? req.user.username : null;
     if (confession.userId && confession.userId !== userId) {
       const notification = await Notification.create({
         userId: confession.userId,

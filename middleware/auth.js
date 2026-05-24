@@ -1,13 +1,20 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 require('dotenv/config');
 
-function authenticate(req, res, next) {
-  const token = req.headers.authorization?.split(' ')[1];
+async function authenticate(req, res, next) {
+  const token = req.cookies?.accessToken;
   if (!token) {
     return res.status(401).json({ message: 'Authentication required' });
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.role !== 'admin' && decoded.tokenVersion !== undefined) {
+      const user = await User.findOne({ username: decoded.id });
+      if (!user || user.tokenVersion !== decoded.tokenVersion) {
+        return res.status(401).json({ message: 'Token revoked, please login again' });
+      }
+    }
     req.user = decoded;
     next();
   } catch {

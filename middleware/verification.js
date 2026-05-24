@@ -4,7 +4,7 @@ require('dotenv/config');
 
 async function requireVerified(req, res, next) {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.cookies?.accessToken;
     if (!token) {
       return res.status(401).json({ message: 'Authentication required' });
     }
@@ -23,6 +23,10 @@ async function requireVerified(req, res, next) {
     const user = await User.findOne({ username: decoded.id });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (decoded.tokenVersion !== undefined && user.tokenVersion !== decoded.tokenVersion) {
+      return res.status(401).json({ message: 'Token revoked, please login again' });
     }
 
     if (user.verificationStatus !== 'verified') {
