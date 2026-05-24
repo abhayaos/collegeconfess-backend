@@ -11,6 +11,7 @@ const collegeRoutes = require('./routes/colleges');
 const roomRoutes = require('./routes/rooms');
 const logRoutes = require('./routes/logs');
 const notificationRoutes = require('./routes/notifications');
+const galiRoutes = require('./routes/gali');
 
 const app = express();
 const server = http.createServer(app);
@@ -31,7 +32,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'https://collegeconfess.vercel.app',
+  'https://guffsansar.vercel.app',
   'https://guffsansar.vercel.app'
 ];
 
@@ -70,6 +71,7 @@ app.use('/api/colleges', collegeRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/gali', galiRoutes);
 
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {

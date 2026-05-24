@@ -3,12 +3,13 @@ const mongoose = require('mongoose');
 const commentSchema = new mongoose.Schema({
   text: { type: String, required: true, maxlength: 200 },
   createdAt: { type: Date, default: Date.now },
+  parentId: { type: mongoose.Schema.Types.ObjectId, default: null },
 });
 
 const confessionSchema = new mongoose.Schema({
   shortId: { type: String, required: true, unique: true },
   title: { type: String, maxlength: 100 },
-  text: { type: String, required: true, maxlength: 5000 },
+  text: { type: String, default: '', maxlength: 5000 },
   category: {
     type: String,
     enum: ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'],

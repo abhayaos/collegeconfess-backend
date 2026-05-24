@@ -1,9 +1,17 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Confession = require('../models/Confession');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Log = require('../models/Log');
 const profanityFilter = require('../middleware/profanityFilter');
+
+function findByIdOrShortId(id) {
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return { $or: [{ shortId: id }, { _id: id }] };
+  }
+  return { shortId: id };
+}
 
 function generateShortId() {
   return crypto.randomInt(100000, 999999).toString();
@@ -20,8 +28,19 @@ async function getUniqueShortId() {
 }
 
 const animals = [
-  'Tiger', 'Panda', 'Lion', 'Eagle', 'Fox', 'Wolf', 'Bear',
-  'Deer', 'Owl', 'Dolphin', 'Phoenix', 'Dragon', 'Falcon', 'Panther',
+  'Sleeping Panda', 'Silent Ninja', 'Lost Engineer', 'Sad Potato',
+  'Midnight Soul', 'Broken WiFi', 'Coffee Addict', 'Confused Human',
+  'Hidden Tiger', 'Angry Penguin', 'Secret Rider', 'Lonely Coder',
+  'Dream Walker', 'Late Assignment', 'Campus Ghost', 'Unknown Viber',
+  'Crying Genius', 'Sleeping Owl', 'Mystery Lama', 'Bored Student',
+  'Noisy Monkey', 'Toxic Tomato', 'Sneaky Panda', 'Night Surfer',
+  'Lazy Dragon', 'Silent Storm', 'Fake Topper', 'Lost in Canteen',
+  'Hungry Yak', 'Dark Coffee', 'Overthinking Goat', 'Last Bench Legend',
+  'Low Battery Human', 'Assignment Survivor', 'Meme Dealer', 'Chiya Addict',
+  'Sad Biryani', 'Hidden Chaos', 'Library Escapee', 'Anonymous 404',
+  'Chiya Philosopher', 'Guff Master', 'Kanda Hunter', 'Hostel Survivor',
+  'Canteen King', 'Exam Warrior', 'Tension Machine', 'Padhai Victim',
+  'Guff Sansari', 'Crush Detective',
 ];
 
 function randomName() {
@@ -40,14 +59,11 @@ function sanitize(str) {
 exports.create = async (req, res) => {
   try {
     let { text, category, title, collegeId } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ message: 'Text is required' });
+    if ((!text || !text.trim()) && (!title || !title.trim())) {
+      return res.status(400).json({ message: 'Title or description is required' });
     }
-    if (!title || !title.trim()) {
-      return res.status(400).json({ message: 'Title is required' });
-    }
-    text = profanityFilter(sanitize(text));
-    title = sanitize(title);
+    text = profanityFilter(sanitize(text || ''));
+    title = sanitize(title || '');
     const ipHash = hashIP(req.ip);
     const recent = await Confession.findOne({ ipHash })
       .sort({ createdAt: -1 });
@@ -157,9 +173,7 @@ exports.getStats = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    const confession = await Confession.findOne({
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
-    });
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
     res.json(confession);
   } catch (err) {
@@ -170,9 +184,7 @@ exports.getOne = async (req, res) => {
 exports.like = async (req, res) => {
   try {
     const ipHash = hashIP(req.ip);
-    const confession = await Confession.findOne({
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
-    });
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
     if (confession.likedIPs.includes(ipHash)) {
       return res.status(400).json({ message: 'Already liked' });
@@ -207,9 +219,7 @@ exports.comment = async (req, res) => {
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Comment text is required' });
     }
-    const confession = await Confession.findOne({
-      $or: [{ shortId: req.params.id }, { _id: req.params.id }]
-    });
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
     confession.comments.push({ text: sanitize(text).slice(0, 200) });
     await confession.save();
@@ -221,6 +231,41 @@ exports.comment = async (req, res) => {
         userId: confession.userId,
         type: 'comment',
         message: `Someone commented on your confession`,
+        confessionId: confession.shortId,
+      });
+      const io = req.app.get('io');
+      io.to(`user:${confession.userId}`).emit('new-notification', notification);
+      io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
+    }
+
+    res.status(201).json(confession);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.reply = async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Reply text is required' });
+    }
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) return res.status(404).json({ message: 'Not found' });
+
+    const parentComment = confession.comments.id(req.params.commentId);
+    if (!parentComment) return res.status(404).json({ message: 'Comment not found' });
+
+    confession.comments.push({ text: sanitize(text).slice(0, 200), parentId: parentComment._id });
+    await confession.save();
+    req.app.get('io').emit('update-confession', confession);
+
+    const userId = req.user ? req.user.username : (req.body.userId || null);
+    if (confession.userId && confession.userId !== userId) {
+      const notification = await Notification.create({
+        userId: confession.userId,
+        type: 'reply',
+        message: `Someone replied to a comment on your confession`,
         confessionId: confession.shortId,
       });
       const io = req.app.get('io');

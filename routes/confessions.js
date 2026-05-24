@@ -15,5 +15,6 @@ router.delete('/:id', authenticate, requireAdmin, ctrl.deleteConfession);
 router.get('/:id', ctrl.getOne);
 router.post('/:id/like', rateLimiter, ctrl.like);
 router.post('/:id/comment', rateLimiter, authenticate, requireVerified, ctrl.comment);
+router.post('/:id/comment/:commentId/reply', rateLimiter, authenticate, requireVerified, ctrl.reply);
 
 module.exports = router;
