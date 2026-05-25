@@ -306,7 +306,7 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
-router.get('/user/:username', rateLimiter, authenticate, async (req, res) => {
+router.get('/user/:username', rateLimiter, async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId');
     if (!user) {
