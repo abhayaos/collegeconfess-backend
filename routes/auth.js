@@ -30,8 +30,8 @@ function generateTokens(user) {
 function setRefreshCookie(res, token) {
   res.cookie('refreshToken', token, {
     httpOnly: true,
-    secure: isSecure,
-    sameSite: 'strict',
+    secure: true,
+    sameSite: 'none',
     path: '/',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
@@ -40,8 +40,8 @@ function setRefreshCookie(res, token) {
 function setAccessCookie(res, token) {
   res.cookie('accessToken', token, {
     httpOnly: true,
-    secure: isSecure,
-    sameSite: 'strict',
+    secure: true,
+    sameSite: 'none',
     path: '/',
     maxAge: 15 * 60 * 1000,
   });
