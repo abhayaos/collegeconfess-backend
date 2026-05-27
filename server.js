@@ -24,7 +24,8 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'https://guffsansar.vercel.app',
   'https://collegeconfess-backend.onrender.com',
-];
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 const corsCheck = (origin, callback) => {
   if (!origin) return callback(null, true);

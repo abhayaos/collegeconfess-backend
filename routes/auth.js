@@ -14,8 +14,6 @@ const router = express.Router();
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
-const isSecure = process.env.NODE_ENV === 'production';
-
 const adminPasswordHash = process.env.ADMIN_PASSWORD
   ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 12)
   : null;
@@ -27,24 +25,24 @@ function generateTokens(user) {
   return { accessToken, refreshToken };
 }
 
+const cookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none',
+  path: '/',
+};
+
 function setRefreshCookie(res, token) {
-  res.cookie('refreshToken', token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'none',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  res.cookie('refreshToken', token, { ...cookieOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
 }
 
 function setAccessCookie(res, token) {
-  res.cookie('accessToken', token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'none',
-    path: '/',
-    maxAge: 15 * 60 * 1000,
-  });
+  res.cookie('accessToken', token, { ...cookieOptions, maxAge: 15 * 60 * 1000 });
+}
+
+function clearCookies(res) {
+  res.clearCookie('accessToken', { ...cookieOptions });
+  res.clearCookie('refreshToken', { ...cookieOptions });
 }
 
 router.post('/google', rateLimiter, async (req, res) => {
@@ -108,7 +106,7 @@ router.post('/google', rateLimiter, async (req, res) => {
       return res.json({ token: accessToken, user: userData, onboarding: true });
     }
 
-    res.json({ token: accessToken, user: userData, onboarding: false });
+    return res.json({ token: accessToken, user: userData, onboarding: false });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ message: 'Invalid Google credential' });
@@ -226,12 +224,12 @@ router.post('/login', rateLimiter, async (req, res) => {
 router.post('/refresh', rateLimiter, async (req, res) => {
   const token = req.cookies?.refreshToken;
   if (!token) {
-    return res.status(401).json({ message: 'No refresh token' });
+    return res.json({ user: null });
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (decoded.type !== 'refresh') {
-      return res.status(401).json({ message: 'Invalid token type' });
+      return res.json({ user: null });
     }
     if (decoded.role !== 'admin') {
       const user = await User.findOne({ username: decoded.id });
@@ -241,7 +239,7 @@ router.post('/refresh', rateLimiter, async (req, res) => {
       const tokens = generateTokens(user);
       setRefreshCookie(res, tokens.refreshToken);
       setAccessCookie(res, tokens.accessToken);
-      res.json({
+      return res.json({
         token: tokens.accessToken,
         user: {
           id: user.username,
@@ -262,10 +260,10 @@ router.post('/refresh', rateLimiter, async (req, res) => {
       const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
       setRefreshCookie(res, refreshToken);
       setAccessCookie(res, accessToken);
-      res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
+      return res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
     }
   } catch {
-    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    return res.json({ user: null });
   }
 });
 
@@ -280,9 +278,8 @@ router.post('/logout', rateLimiter, async (req, res) => {
     } catch {
     }
   }
-  res.clearCookie('accessToken', { path: '/' });
-  res.clearCookie('refreshToken', { path: '/' });
-  res.json({ message: 'Logged out' });
+  clearCookies(res);
+  return res.json({ message: 'Logged out' });
 });
 
 router.get('/me', authenticate, async (req, res) => {
@@ -420,9 +417,8 @@ router.delete('/me', rateLimiter, authenticate, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     await Confession.deleteMany({ userId: req.user.id });
-    res.clearCookie('accessToken', { path: '/' });
-    res.clearCookie('refreshToken', { path: '/' });
-    res.json({ message: 'Account deleted' });
+    clearCookies(res);
+    return res.json({ message: 'Account deleted' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
