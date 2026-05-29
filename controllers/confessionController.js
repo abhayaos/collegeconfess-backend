@@ -5,6 +5,12 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Log = require('../models/Log');
 const profanityFilter = require('../middleware/profanityFilter');
+const cache = require('../utils/cache');
+
+const FEED_PROJECTION = {
+  text: 1, title: 1, category: 1, anonymousName: 1,
+  collegeId: 1, likes: 1, comments: 1, createdAt: 1, isAd: 1, adLink: 1, shortId: 1, userId: 1,
+};
 
 function findByIdOrShortId(id) {
   if (mongoose.Types.ObjectId.isValid(id)) {
@@ -78,6 +84,10 @@ exports.create = async (req, res) => {
 
     const userId = req.user ? req.user.username : null;
 
+    const user = userId ? await User.findOne({ username: userId }) : null;
+    const isPremium = user?.premium === true;
+    const isAd = req.body.isAd === true && isPremium;
+
     const confession = await Confession.create({
       shortId: await getUniqueShortId(),
       title: title.trim().slice(0, 100),
@@ -87,7 +97,11 @@ exports.create = async (req, res) => {
       collegeId: collegeId ? collegeId.toLowerCase() : null,
       userId,
       ipHash,
+      isAd,
+      adLink: isAd ? (req.body.adLink || '').trim().slice(0, 500) : undefined,
     });
+
+    cache.delPattern('feed:*').catch(() => {});
 
     if (req.app.get('io')) {
       const io = req.app.get('io');
@@ -107,6 +121,14 @@ exports.create = async (req, res) => {
 exports.getAll = async (req, res) => {
   try {
     const { page = 1, limit = 10, search, category, collegeId } = req.query;
+    const numLimit = Number(limit);
+
+    if (!search && !category && !collegeId) {
+      const cacheKey = `feed:main:${page}:${numLimit}`;
+      const cached = await cache.get(cacheKey);
+      if (cached) return res.json(cached);
+    }
+
     const query = {};
     if (search) {
       if (search.length > 200) {
@@ -121,35 +143,44 @@ exports.getAll = async (req, res) => {
     if (collegeId) {
       query.collegeId = collegeId.toLowerCase();
     }
-    const confessions = await Confession.find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(Number(limit));
-    const total = await Confession.countDocuments(query);
+
+    const sort = search ? { createdAt: -1 } : { isAd: -1, createdAt: -1 };
+
+    const [confessions, total] = await Promise.all([
+      Confession.find(query, FEED_PROJECTION)
+        .sort(sort)
+        .skip((page - 1) * numLimit)
+        .limit(numLimit)
+        .lean(),
+      Confession.countDocuments(query),
+    ]);
 
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
     const collegeQuery = collegeId ? { collegeId: collegeId.toLowerCase() } : {};
-
     const userQuery = collegeId ? { collegeId: collegeId.toUpperCase() } : {};
+
     const [students, today] = await Promise.all([
       User.countDocuments(userQuery),
-      Confession.countDocuments({ ...collegeQuery, createdAt: { $gte: startOfToday } })
+      Confession.countDocuments({ ...collegeQuery, createdAt: { $gte: startOfToday } }),
     ]);
 
-    res.json({
+    const result = {
       confessions,
       total,
       page: Number(page),
-      totalPages: Math.ceil(total / limit),
-      stats: {
-        total,
-        students: students || 0,
-        today: today || 0
-      }
-    });
+      totalPages: Math.ceil(total / numLimit),
+      stats: { total, students: students || 0, today: today || 0 },
+    };
+
+    if (!search && !category && !collegeId && page <= 5) {
+      cache.set(`feed:main:${page}:${numLimit}`, result, 15).catch(() => {});
+    }
+
+    res.json(result);
   } catch (err) {
+    console.error('getAll error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -176,7 +207,7 @@ exports.getStats = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id)).lean();
     if (!confession) return res.status(404).json({ message: 'Not found' });
     res.json(confession);
   } catch (err) {
@@ -210,6 +241,8 @@ exports.like = async (req, res) => {
       io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
     }
 
+    cache.delPattern('feed:*').catch(() => {});
+
     res.json({ likes: confession.likes });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -240,6 +273,8 @@ exports.comment = async (req, res) => {
       io.to(`user:${confession.userId}`).emit('new-notification', notification);
       io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
     }
+
+    cache.delPattern('feed:*').catch(() => {});
 
     res.status(201).json(confession);
   } catch (err) {
@@ -276,6 +311,8 @@ exports.reply = async (req, res) => {
       io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
     }
 
+    cache.delPattern('feed:*').catch(() => {});
+
     res.status(201).json(confession);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -284,9 +321,10 @@ exports.reply = async (req, res) => {
 
 exports.trending = async (req, res) => {
   try {
-    const confessions = await Confession.find()
+    const confessions = await Confession.find({}, FEED_PROJECTION)
       .sort({ likes: -1, createdAt: -1 })
-      .limit(10);
+      .limit(10)
+      .lean();
     res.json(confessions);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -297,13 +335,14 @@ exports.getUserStats = async (req, res) => {
   try {
     const { username } = req.params;
 
-    const confessions = await Confession.find({ userId: username });
-    const totalConfessions = confessions.length;
-    const totalLikes = confessions.reduce((sum, c) => sum + (c.likes || 0), 0);
+    const [result] = await Confession.aggregate([
+      { $match: { userId: username } },
+      { $group: { _id: null, total: { $sum: 1 }, likes: { $sum: '$likes' } } },
+    ]);
 
     res.json({
-      confessions: totalConfessions,
-      likes: totalLikes
+      confessions: result?.total || 0,
+      likes: result?.likes || 0,
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -322,6 +361,8 @@ exports.deleteConfession = async (req, res) => {
     if (!confession) {
       return res.status(404).json({ message: 'Confession not found' });
     }
+
+    cache.delPattern('feed:*').catch(() => {});
 
     if (req.app.get('io')) {
       const io = req.app.get('io');

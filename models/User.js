@@ -51,6 +51,13 @@ const userSchema = new mongoose.Schema({
     enum: ['pending', 'verified', 'rejected'],
     default: 'pending',
   },
+  avatar: {
+    type: String,
+  },
+  premium: {
+    type: Boolean,
+    default: false,
+  },
   tokenVersion: {
     type: Number,
     default: 0,

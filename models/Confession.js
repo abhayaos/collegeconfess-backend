@@ -22,9 +22,19 @@ const confessionSchema = new mongoose.Schema({
   likedIPs: [{ type: String }],
   comments: [commentSchema],
   ipHash: { type: String },
+  isAd: { type: Boolean, default: false },
+  adLink: { type: String },
   verified: { type: Boolean, default: false },
 }, { timestamps: true });
 
 confessionSchema.index({ text: 'text' });
+confessionSchema.index({ createdAt: -1 });
+confessionSchema.index({ isAd: -1, createdAt: -1 });
+confessionSchema.index({ collegeId: 1, createdAt: -1 });
+confessionSchema.index({ category: 1, createdAt: -1 });
+confessionSchema.index({ collegeId: 1, category: 1, createdAt: -1 });
+confessionSchema.index({ likes: -1, createdAt: -1 });
+confessionSchema.index({ ipHash: 1, createdAt: -1 });
+confessionSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Confession', confessionSchema);

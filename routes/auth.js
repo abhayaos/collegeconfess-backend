@@ -14,6 +14,19 @@ const router = express.Router();
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
+const emojis = [
+  '😶','🙂','😎','🫠','🥸','🤓','💤','🌚','👀','🐼','🐸','🐱','🦊','🐧','🦥',
+  '🤡','💀','🗿','👽','🤖','👹','👺','🥴','🤠','😵‍💫','🫥','🐔','🍕','🥔','🧃',
+  '🕶️','🎭','🌑','🖤','☠️','👤','🐺','🔥','⚡','🩸','🪬','🧠','🫣','🥀','🕳️',
+  '🌸','☁️','🌙','⭐','🦋','🍓','🎧','📚','🪐','🌊','🍄','🧸','🎀','🪻','🌷',
+  '📉','☕','😭','🤯','🧠','💤','🍜','🧍','🫡','🧃','💔','🧨','⏰',
+  '🎭🖤','🌚☕','🐼💤','👀🔥','💀📚','🥀🌙','🤡🎧','🫣🖤','🐸☕','👽🛸',
+];
+
+function randomEmoji() {
+  return emojis[Math.floor(Math.random() * emojis.length)];
+}
+
 const adminPasswordHash = process.env.ADMIN_PASSWORD
   ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 12)
   : null;
@@ -44,6 +57,52 @@ function clearCookies(res) {
   res.clearCookie('accessToken', { ...cookieOptions });
   res.clearCookie('refreshToken', { ...cookieOptions });
 }
+
+function userData(user) {
+  if (!user.avatar) {
+    user.avatar = randomEmoji();
+    user.save();
+  }
+  return {
+    id: user.username,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    authProvider: user.authProvider,
+    verificationStatus: user.verificationStatus,
+    gender: user.gender,
+    collegeId: user.collegeId,
+    hasPassword: !!user.password,
+    avatar: user.avatar,
+    premium: user.premium,
+  };
+}
+
+router.post('/set-password', rateLimiter, authenticate, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findOne({ username: req.user.id });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.authProvider === 'local' && user.password) {
+      return res.status(400).json({ message: 'You already have a password set' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password set successfully', hasPassword: true });
+  } catch (err) {
+    console.error('Set password error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 router.post('/google', rateLimiter, async (req, res) => {
   try {
@@ -86,6 +145,7 @@ router.post('/google', rateLimiter, async (req, res) => {
         name: googleName || 'User',
         authProvider: 'google',
         verificationStatus: 'pending',
+        avatar: randomEmoji(),
       });
     }
 
@@ -93,20 +153,13 @@ router.post('/google', rateLimiter, async (req, res) => {
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
 
-    const userData = {
-      id: user.username,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      authProvider: user.authProvider,
-      verificationStatus: user.verificationStatus,
-    };
+    const uData = userData(user);
 
     if (!user.gender) {
-      return res.json({ token: accessToken, user: userData, onboarding: true });
+      return res.json({ token: accessToken, user: uData, onboarding: true });
     }
 
-    return res.json({ token: accessToken, user: userData, onboarding: false });
+    return res.json({ token: accessToken, user: uData, onboarding: false });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ message: 'Invalid Google credential' });
@@ -146,17 +199,7 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
 
-    res.json({
-      token: accessToken,
-      user: {
-        id: user.username,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        authProvider: user.authProvider,
-        verificationStatus: user.verificationStatus,
-      },
-    });
+    res.json({ token: accessToken, user: userData(user) });
   } catch (err) {
     console.error('Onboard error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -204,17 +247,7 @@ router.post('/login', rateLimiter, async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user);
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
-    res.json({
-      token: accessToken,
-      user: {
-        id: user.username,
-        name: user.name,
-        collegeId: user.collegeId,
-        role: user.role,
-        authProvider: user.authProvider,
-        verificationStatus: user.verificationStatus,
-      },
-    });
+    res.json({ token: accessToken, user: userData(user) });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -241,16 +274,7 @@ router.post('/refresh', rateLimiter, async (req, res) => {
       setAccessCookie(res, tokens.accessToken);
       return res.json({
         token: tokens.accessToken,
-        user: {
-          id: user.username,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          authProvider: user.authProvider,
-          verificationStatus: user.verificationStatus,
-          gender: user.gender,
-          collegeId: user.collegeId,
-        },
+        user: userData(user),
         needsOnboarding: !user.gender,
         collegeId: user.collegeId,
       });
@@ -288,16 +312,7 @@ router.get('/me', authenticate, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json({
-      id: user.username,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      authProvider: user.authProvider,
-      verificationStatus: user.verificationStatus,
-      gender: user.gender,
-      collegeId: user.collegeId,
-    });
+    res.json(userData(user));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -305,11 +320,12 @@ router.get('/me', authenticate, async (req, res) => {
 
 router.get('/user/:username', rateLimiter, async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId');
+    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId avatar');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json({ id: user.username, name: user.name, role: user.role, verificationStatus: user.verificationStatus, gender: user.gender, createdAt: user.createdAt, collegeId: user.collegeId });
+    const uData = userData(user);
+    res.json({ id: uData.id, name: uData.name, role: uData.role, verificationStatus: uData.verificationStatus, gender: uData.gender, createdAt: user.createdAt, collegeId: uData.collegeId, avatar: uData.avatar });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -317,7 +333,7 @@ router.get('/user/:username', rateLimiter, async (req, res) => {
 
 router.put('/me', rateLimiter, authenticate, async (req, res) => {
   try {
-    const { name, gender } = req.body;
+    const { name, gender, username } = req.body;
     const user = await User.findOne({ username: req.user.id });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -330,17 +346,22 @@ router.put('/me', rateLimiter, authenticate, async (req, res) => {
       if (!['male', 'female', 'other'].includes(gender)) return res.status(400).json({ message: 'Invalid gender' });
       user.gender = gender;
     }
+    if (username && username.toLowerCase() !== req.user.id) {
+      const newUsername = username.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (newUsername.length < 3 || newUsername.length > 30) {
+        return res.status(400).json({ message: 'Username must be 3-30 characters' });
+      }
+      const existing = await User.findOne({ username: newUsername });
+      if (existing) {
+        return res.status(409).json({ message: 'Username already taken' });
+      }
+      user.username = newUsername;
+    }
     await user.save();
-    res.json({
-      id: user.username,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      authProvider: user.authProvider,
-      verificationStatus: user.verificationStatus,
-      gender: user.gender,
-      collegeId: user.collegeId,
-    });
+    const tokens = generateTokens(user);
+    setAccessCookie(res, tokens.accessToken);
+    setRefreshCookie(res, tokens.refreshToken);
+    res.json({ token: tokens.accessToken, user: userData(user) });
   } catch (err) {
     console.error('Update profile error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -350,7 +371,7 @@ router.put('/me', rateLimiter, authenticate, async (req, res) => {
 router.get('/users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
     const users = await User.find().select('-password -idCard');
-    res.json(users);
+    res.json(users.map(u => userData(u)));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -377,6 +398,7 @@ router.post('/users', rateLimiter, authenticate, requireAdmin, async (req, res) 
       name,
       collegeId: collegeId ? collegeId.toUpperCase() : undefined,
       role: 'user',
+      avatar: randomEmoji(),
     });
 
     await Log.create({ action: 'create-user', target: 'user', targetId: username.toLowerCase(), adminId: req.user.id, details: `Created user ${username}` });
@@ -388,7 +410,7 @@ router.post('/users', rateLimiter, authenticate, requireAdmin, async (req, res) 
 
 router.put('/users/:username', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
-    const { collegeId } = req.body;
+    const { collegeId, premium } = req.body;
     const username = req.params.username.toLowerCase();
 
     const user = await User.findOne({ username });
@@ -396,11 +418,19 @@ router.put('/users/:username', rateLimiter, authenticate, requireAdmin, async (r
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.collegeId = collegeId ? collegeId.toUpperCase() : undefined;
+    if (collegeId !== undefined) {
+      user.collegeId = collegeId ? collegeId.toUpperCase() : undefined;
+    }
+    if (premium !== undefined) {
+      user.premium = premium;
+    }
     await user.save();
 
-    await Log.create({ action: 'update-user', target: 'user', targetId: username, adminId: req.user.id, details: `Updated collegeId for user ${username} to ${collegeId || 'none'}` });
-    res.json({ id: user.username, name: user.name, collegeId: user.collegeId });
+    const details = [];
+    if (collegeId !== undefined) details.push(`collegeId → ${collegeId || 'none'}`);
+    if (premium !== undefined) details.push(`premium → ${premium}`);
+    await Log.create({ action: 'update-user', target: 'user', targetId: username, adminId: req.user.id, details: details.join(', ') || 'No changes' });
+    res.json({ id: user.username, name: user.name, collegeId: user.collegeId, premium: user.premium });
   } catch (err) {
     console.error('Update user error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -443,7 +473,7 @@ router.get('/verify-users', rateLimiter, authenticate, requireAdmin, async (req,
     const users = await User.find({
       verificationStatus: { $in: ['pending', 'verified', 'rejected'] },
     }).select('-password').sort({ createdAt: -1 });
-    res.json(users);
+    res.json(users.map(u => userData(u)));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
