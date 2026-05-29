@@ -1,17 +1,15 @@
 app = "collegeconfess-backend"
 primary_region = "iad"
 
-[build]
-
 [http_service]
-  internal_port = 5000
-  force_https = true
-  auto_start_machines = true
-  auto_stop_machines = false
-  min_machines_running = 1
-  processes = ["app"]
+auto_start_machines = true
+auto_stop_machines = false
+force_https = true
+internal_port = 5_000
+min_machines_running = 1
+processes = [ "app" ]
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
-  cpus = 1
+cpu_kind = "shared"
+cpus = 1
+memory = "512mb"
