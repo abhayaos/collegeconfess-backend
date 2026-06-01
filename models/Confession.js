@@ -20,6 +20,8 @@ const confessionSchema = new mongoose.Schema({
   userId: { type: String },
   likes: { type: Number, default: 0 },
   likedIPs: [{ type: String }],
+  likedBy: [{ type: String }],
+  savedBy: [{ type: String }],
   comments: [commentSchema],
   ipHash: { type: String },
   isAd: { type: Boolean, default: false },

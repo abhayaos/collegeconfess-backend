@@ -38,10 +38,11 @@ function generateTokens(user) {
   return { accessToken, refreshToken };
 }
 
+const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 const cookieOptions = {
   httpOnly: true,
-  secure: true,
-  sameSite: 'none',
+  secure: !isDev,
+  sameSite: isDev ? 'lax' : 'none',
   path: '/',
 };
 
@@ -402,6 +403,7 @@ router.post('/users', rateLimiter, authenticate, requireAdmin, async (req, res) 
     });
 
     await Log.create({ action: 'create-user', target: 'user', targetId: username.toLowerCase(), adminId: req.user.id, details: `Created user ${username}` });
+    req.app.get('io')?.emit('users-changed', { action: 'create', username: user.username });
     res.status(201).json({ id: user.username, name: user.name, collegeId: user.collegeId, role: user.role });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -430,6 +432,7 @@ router.put('/users/:username', rateLimiter, authenticate, requireAdmin, async (r
     if (collegeId !== undefined) details.push(`collegeId → ${collegeId || 'none'}`);
     if (premium !== undefined) details.push(`premium → ${premium}`);
     await Log.create({ action: 'update-user', target: 'user', targetId: username, adminId: req.user.id, details: details.join(', ') || 'No changes' });
+    req.app.get('io')?.emit('users-changed', { action: 'update', username });
     res.json({ id: user.username, name: user.name, collegeId: user.collegeId, premium: user.premium });
   } catch (err) {
     console.error('Update user error:', err);
@@ -462,6 +465,7 @@ router.delete('/users/:username', rateLimiter, authenticate, requireAdmin, async
       return res.status(404).json({ message: 'User not found' });
     }
     await Log.create({ action: 'delete-user', target: 'user', targetId: username, adminId: req.user.id, details: `Deleted user ${username}` });
+    req.app.get('io')?.emit('users-changed', { action: 'delete', username });
     res.json({ message: 'User deleted' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -473,7 +477,7 @@ router.get('/verify-users', rateLimiter, authenticate, requireAdmin, async (req,
     const users = await User.find({
       verificationStatus: { $in: ['pending', 'verified', 'rejected'] },
     }).select('-password').sort({ createdAt: -1 });
-    res.json(users.map(u => userData(u)));
+    res.json(users.map(u => ({ ...userData(u), username: u.username, idCard: u.idCard })));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -502,6 +506,7 @@ router.put('/verify-user/:id', rateLimiter, authenticate, requireAdmin, async (r
       details: `${status === 'verified' ? 'Approved' : 'Rejected'} verification for user ${user.username}`,
     });
 
+    req.app.get('io')?.emit('user-verified', { username: user.username, status });
     res.json({
       id: user.username,
       name: user.name,

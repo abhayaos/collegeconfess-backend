@@ -225,6 +225,9 @@ exports.like = async (req, res) => {
     }
     confession.likes += 1;
     confession.likedIPs.push(ipHash);
+    if (req.user?.username && !confession.likedBy.includes(req.user.username)) {
+      confession.likedBy.push(req.user.username);
+    }
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
@@ -244,6 +247,92 @@ exports.like = async (req, res) => {
     cache.delPattern('feed:*').catch(() => {});
 
     res.json({ likes: confession.likes });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.unlike = async (req, res) => {
+  try {
+    const ipHash = hashIP(req.ip);
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) return res.status(404).json({ message: 'Not found' });
+    if (!confession.likedIPs.includes(ipHash)) {
+      return res.status(400).json({ message: 'Not liked yet' });
+    }
+    confession.likes -= 1;
+    confession.likedIPs = confession.likedIPs.filter((h) => h !== ipHash);
+    if (req.user?.username) {
+      confession.likedBy = confession.likedBy.filter((u) => u !== req.user.username);
+    }
+    await confession.save();
+    req.app.get('io').emit('update-confession', confession);
+
+    cache.delPattern('feed:*').catch(() => {});
+
+    res.json({ likes: confession.likes });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getLikedIds = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.json({ ids: [] });
+    const confessions = await Confession.find({ likedBy: req.user.id }, { shortId: 1, _id: 0 });
+    const ids = confessions.map((c) => c.shortId);
+    res.json({ ids });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.save = async (req, res) => {
+  try {
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) return res.status(404).json({ message: 'Not found' });
+    const userId = req.user?.username || req.user?.id;
+    if (!confession.savedBy.includes(userId)) {
+      confession.savedBy.push(userId);
+      await confession.save();
+    }
+    res.json({ message: 'Saved' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.unsave = async (req, res) => {
+  try {
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) return res.status(404).json({ message: 'Not found' });
+    const userId = req.user?.username || req.user?.id;
+    confession.savedBy = confession.savedBy.filter((u) => u !== userId);
+    await confession.save();
+    res.json({ message: 'Unsaved' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getSavedIds = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.json({ ids: [] });
+    const userId = req.user?.username || req.user?.id;
+    const confessions = await Confession.find({ savedBy: userId }, { shortId: 1, _id: 0 });
+    const ids = confessions.map((c) => c.shortId);
+    res.json({ ids });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getSaved = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.json([]);
+    const userId = req.user?.username || req.user?.id;
+    const confessions = await Confession.find({ savedBy: userId }, FEED_PROJECTION).sort({ createdAt: -1 }).lean();
+    res.json(confessions);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }

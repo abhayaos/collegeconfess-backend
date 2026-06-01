@@ -24,6 +24,8 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'https://guffsansar.vercel.app',
   'https://collegeconfess-backend.onrender.com',
+  'https://guffsansar.com',
+  'https://www.guffsansar.com',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 

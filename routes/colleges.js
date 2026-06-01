@@ -41,6 +41,7 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
       description,
     });
     await Log.create({ action: 'create-college', target: 'college', targetId: collegeId.toUpperCase(), adminId: req.user.id, details: `Created college ${name} (${collegeId.toUpperCase()})` });
+    req.app.get('io')?.emit('colleges-changed');
     res.status(201).json(college);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -53,6 +54,7 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
     if (college) {
       await Log.create({ action: 'delete-college', target: 'college', targetId: college.collegeId, adminId: req.user.id, details: `Deleted college ${college.name} (${college.collegeId})` });
     }
+    req.app.get('io')?.emit('colleges-changed');
     res.json({ message: 'College deleted' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

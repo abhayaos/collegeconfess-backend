@@ -1,4 +1,5 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 
 exports.getNotifications = async (req, res) => {
   try {
@@ -42,6 +43,36 @@ exports.markAllRead = async (req, res) => {
 
     await Notification.updateMany({ userId, read: false }, { read: true });
     res.json({ message: 'All marked as read' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.sendAll = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ message: 'Message is required' });
+    }
+
+    const users = await User.find({}, 'username');
+    const notifications = users.map((user) => ({
+      userId: user.username,
+      type: 'admin',
+      message: message.trim(),
+      read: false,
+    }));
+
+    const created = await Notification.insertMany(notifications);
+    const io = req.app.get('io');
+
+    for (const notif of created) {
+      const data = notif.toJSON();
+      io.to(`user:${data.userId}`).emit('new-notification', data);
+      io.to(`user:${data.userId}`).emit('notifications-count', { count: 1 });
+    }
+
+    res.json({ message: `Notification sent to ${notifications.length} users` });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
