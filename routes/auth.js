@@ -38,7 +38,7 @@ function generateTokens(user) {
   return { accessToken, refreshToken };
 }
 
-const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+const isDev = !process.env.FLY_APP_NAME && (!process.env.NODE_ENV || process.env.NODE_ENV === 'development');
 const cookieOptions = {
   httpOnly: true,
   secure: !isDev,
