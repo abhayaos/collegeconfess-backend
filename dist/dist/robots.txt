@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://www.guffsansar.com/sitemap.xml
+
+Disallow: /college/admin/
+Disallow: /edit-profile
+Disallow: /onboard
+Disallow: /notifications
+Disallow: /settings
+Disallow: /t/
+Disallow: /new
+
+Crawl-Delay: 10
