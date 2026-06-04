@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 require('dotenv/config');
 
@@ -101,8 +102,9 @@ io.on('connection', (socket) => {
   });
 });
 
-app.get('/', (req, res) => {
-  res.send('Guff Sansar API running!');
+app.use(express.static(path.join(__dirname, '..', 'dist')));
+app.get(/^\/(?!api\/).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;

@@ -42,7 +42,7 @@ const isDev = !process.env.FLY_APP_NAME && (!process.env.NODE_ENV || process.env
 const cookieOptions = {
   httpOnly: true,
   secure: !isDev,
-  sameSite: isDev ? 'lax' : 'none',
+  sameSite: 'lax',
   path: '/',
 };
 
