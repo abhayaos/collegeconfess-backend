@@ -24,6 +24,7 @@ const confessionSchema = new mongoose.Schema({
   savedBy: [{ type: String }],
   comments: [commentSchema],
   ipHash: { type: String },
+  isPremium: { type: Boolean, default: false },
   isAd: { type: Boolean, default: false },
   adLink: { type: String },
   verified: { type: Boolean, default: false },

@@ -9,7 +9,7 @@ const cache = require('../utils/cache');
 
 const FEED_PROJECTION = {
   text: 1, title: 1, category: 1, anonymousName: 1,
-  collegeId: 1, likes: 1, comments: 1, createdAt: 1, isAd: 1, adLink: 1, shortId: 1, userId: 1,
+  collegeId: 1, likes: 1, comments: 1, createdAt: 1, isAd: 1, adLink: 1, shortId: 1, userId: 1, isPremium: 1,
 };
 
 function findByIdOrShortId(id) {
@@ -97,6 +97,7 @@ exports.create = async (req, res) => {
       collegeId: collegeId ? collegeId.toLowerCase() : null,
       userId,
       ipHash,
+      isPremium,
       isAd,
       adLink: isAd ? (req.body.adLink || '').trim().slice(0, 500) : undefined,
     });
