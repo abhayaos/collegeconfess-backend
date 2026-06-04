@@ -13,6 +13,8 @@ router.get('/trending', rateLimiter, ctrl.trending);
 router.get('/user/:username', rateLimiter, ctrl.getUserStats);
 router.get('/liked-ids', rateLimiter, authenticate, ctrl.getLikedIds);
 router.get('/saved-ids', rateLimiter, authenticate, ctrl.getSavedIds);
+router.get('/liked', rateLimiter, authenticate, ctrl.getLiked);
+router.get('/user/:username/posts', rateLimiter, ctrl.getUserConfessions);
 router.get('/saved', rateLimiter, authenticate, ctrl.getSaved);
 router.delete('/:id', authenticate, requireAdmin, ctrl.deleteConfession);
 router.get('/:id', rateLimiter, ctrl.getOne);

@@ -426,13 +426,35 @@ exports.getUserStats = async (req, res) => {
 
     const [result] = await Confession.aggregate([
       { $match: { userId: username } },
-      { $group: { _id: null, total: { $sum: 1 }, likes: { $sum: '$likes' } } },
+      { $group: { _id: null, total: { $sum: 1 }, likes: { $sum: '$likes' }, comments: { $sum: { $size: '$comments' } } } },
     ]);
 
     res.json({
       confessions: result?.total || 0,
       likes: result?.likes || 0,
+      comments: result?.comments || 0,
     });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getLiked = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.json([]);
+    const userId = req.user?.username || req.user?.id;
+    const confessions = await Confession.find({ likedBy: userId }, FEED_PROJECTION).sort({ createdAt: -1 }).lean();
+    res.json(confessions);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getUserConfessions = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const confessions = await Confession.find({ userId: username }, FEED_PROJECTION).sort({ createdAt: -1 }).lean();
+    res.json(confessions);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
