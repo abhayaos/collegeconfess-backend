@@ -208,6 +208,59 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
   }
 });
 
+router.post('/register', rateLimiter, async (req, res) => {
+  try {
+    const { username, password, name, email } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ message: 'Username, password, and name are required' });
+    }
+    const cleaned = username.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleaned.length < 3 || cleaned.length > 30) {
+      return res.status(400).json({ message: 'Username must be 3-30 alphanumeric characters' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+    if (name.length > 100) {
+      return res.status(400).json({ message: 'Name too long' });
+    }
+
+    const existing = await User.findOne({ username: cleaned });
+    if (existing) {
+      return res.status(409).json({ message: 'Username already taken' });
+    }
+
+    if (email) {
+      const emailExists = await User.findOne({ email: email.toLowerCase() });
+      if (emailExists) {
+        return res.status(409).json({ message: 'Email already registered' });
+      }
+    }
+
+    const user = await User.create({
+      username: cleaned,
+      password,
+      name: name.trim(),
+      email: email ? email.toLowerCase() : undefined,
+      authProvider: 'local',
+      verificationStatus: 'pending',
+      avatar: randomEmoji(),
+    });
+
+    const { accessToken, refreshToken } = generateTokens(user);
+    setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
+
+    res.status(201).json({ token: accessToken, user: userData(user) });
+  } catch (err) {
+    console.error('Register error:', err);
+    if (err.code === 11000) {
+      return res.status(409).json({ message: 'Username or email already exists' });
+    }
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/login', rateLimiter, async (req, res) => {
   try {
     const { username, password, collegeId } = req.body;
