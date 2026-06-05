@@ -27,10 +27,6 @@ function randomEmoji() {
   return emojis[Math.floor(Math.random() * emojis.length)];
 }
 
-const adminPasswordHash = process.env.ADMIN_PASSWORD
-  ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 12)
-  : null;
-
 function generateTokens(user) {
   const payload = { id: user.username, role: user.role, name: user.name, tokenVersion: user.tokenVersion };
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
@@ -219,23 +215,6 @@ router.post('/login', rateLimiter, async (req, res) => {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    const adminUsername = 'admin';
-    if (!adminPasswordHash) {
-      return res.status(500).json({ message: 'Server configuration error' });
-    }
-
-    if (username === adminUsername) {
-      if (bcrypt.compareSync(password, adminPasswordHash)) {
-        const payload = { id: 'admin', role: 'admin', tokenVersion: 0 };
-        const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
-        const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
-        setRefreshCookie(res, refreshToken);
-        setAccessCookie(res, accessToken);
-        return res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
-      }
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
     const user = await User.findOne({ username: username.toLowerCase() });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -270,14 +249,6 @@ router.post('/refresh', rateLimiter, async (req, res) => {
     if (decoded.type !== 'refresh') {
       return res.json({ user: null });
     }
-    if (decoded.role === 'admin' && decoded.id === 'admin') {
-      const payload = { id: 'admin', role: 'admin', tokenVersion: 0 };
-      const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
-      const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      setRefreshCookie(res, refreshToken);
-      setAccessCookie(res, accessToken);
-      return res.json({ token: accessToken, user: { id: 'admin', name: 'Admin', role: 'admin' } });
-    }
     const user = await User.findOne({ username: decoded.id });
     if (!user || user.tokenVersion !== decoded.tokenVersion) {
       return res.status(401).json({ message: 'Token revoked, please login again' });
@@ -301,9 +272,7 @@ router.post('/logout', rateLimiter, async (req, res) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (decoded.id !== 'admin') {
-        await User.updateOne({ username: decoded.id }, { $inc: { tokenVersion: 1 } });
-      }
+      await User.updateOne({ username: decoded.id }, { $inc: { tokenVersion: 1 } });
     } catch {
     }
   }
