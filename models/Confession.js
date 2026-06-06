@@ -12,7 +12,7 @@ const confessionSchema = new mongoose.Schema({
   text: { type: String, default: '', maxlength: 5000 },
   category: {
     type: String,
-    enum: ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'],
+    enum: ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret', 'relationship', 'funny', 'regret', 'college', 'teacher', 'hostel'],
     default: 'love',
   },
   anonymousName: { type: String, required: true },

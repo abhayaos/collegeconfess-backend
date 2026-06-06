@@ -6,7 +6,7 @@ const badWords = [
 function profanityFilter(text) {
   let cleaned = text;
   for (const word of badWords) {
-    const regex = new RegExp(word, 'gi');
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
     cleaned = cleaned.replace(regex, '*'.repeat(word.length));
   }
   return cleaned;

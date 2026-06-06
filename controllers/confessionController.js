@@ -77,7 +77,7 @@ exports.create = async (req, res) => {
       return res.status(429).json({ message: 'Please wait 30 seconds before posting again' });
     }
 
-    const allowedCategories = ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret'];
+    const allowedCategories = ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret', 'relationship', 'funny', 'regret', 'college', 'teacher', 'hostel'];
     if (category && !allowedCategories.includes(category)) {
       return res.status(400).json({ message: 'Invalid category' });
     }
@@ -121,7 +121,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, category, collegeId } = req.query;
+    const { page = 1, limit = 10, search, category, collegeId, minLikes } = req.query;
     const numLimit = Number(limit);
 
     if (!search && !category && !collegeId) {
@@ -131,6 +131,10 @@ exports.getAll = async (req, res) => {
     }
 
     const query = {};
+    if (minLikes) {
+      const min = Number(minLikes);
+      if (!isNaN(min) && min > 0) query.likes = { $gte: min };
+    }
     if (search) {
       if (search.length > 200) {
         return res.status(400).json({ message: 'Search query too long' });
@@ -409,6 +413,21 @@ exports.reply = async (req, res) => {
   }
 };
 
+exports.getTodayCount = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const count = await Confession.countDocuments({
+      userId: username,
+      createdAt: { $gte: startOfToday },
+    });
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.trending = async (req, res) => {
   try {
     const confessions = await Confession.find({}, FEED_PROJECTION)
@@ -457,6 +476,44 @@ exports.getUserConfessions = async (req, res) => {
     const confessions = await Confession.find({ userId: username }, FEED_PROJECTION).sort({ createdAt: -1 }).lean();
     res.json(confessions);
   } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.addLikes = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || typeof amount !== 'number' || amount < 1 || !Number.isInteger(amount)) {
+      return res.status(400).json({ message: 'Amount must be a positive integer' });
+    }
+    if (amount > 100000) {
+      return res.status(400).json({ message: 'Amount cannot exceed 100,000' });
+    }
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) {
+      return res.status(404).json({ message: 'Confession not found' });
+    }
+    confession.likes += amount;
+    await confession.save();
+    cache.delPattern('feed:*').catch(() => {});
+    if (req.app.get('io')) {
+      req.app.get('io').emit('update-confession', confession);
+    }
+    if (confession.userId) {
+      const notification = await Notification.create({
+        userId: confession.userId,
+        type: 'like',
+        message: `Your confession got ${amount} new likes`,
+        confessionId: confession.shortId,
+      });
+      const io = req.app.get('io');
+      io.to(`user:${confession.userId}`).emit('new-notification', notification);
+      io.to(`user:${confession.userId}`).emit('notifications-count', { count: 1 });
+    }
+    await Log.create({ action: 'add-likes', target: 'confession', targetId: confession.shortId, adminId: req.user.id, details: `Added ${amount} likes to confession ${confession.shortId}` });
+    res.json({ likes: confession.likes });
+  } catch (err) {
+    console.error('addLikes error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
