@@ -76,6 +76,13 @@ exports.create = async (req, res) => {
     const user = userId ? await User.findOne({ username: userId }) : null;
     const isPremium = user?.premium === true;
 
+    if (!req.user) {
+      const guestCount = await Confession.countDocuments({ ipHash, userId: null });
+      if (guestCount >= 3) {
+        return res.status(403).json({ message: 'Guest limit reached. Please login to continue posting.' });
+      }
+    }
+
     if (!isPremium) {
       const recent = await Confession.findOne({ ipHash })
         .sort({ createdAt: -1 });

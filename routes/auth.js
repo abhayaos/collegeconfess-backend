@@ -146,7 +146,7 @@ router.post('/google', rateLimiter, async (req, res) => {
       });
     }
 
-    if (email === 'abhayabikramshahiofficial@gmail.com') {
+    if (email === 'abhayabikramshahiofficial@gmail.com' || email === 'stnjro@gmail.com') {
       user.role = 'admin';
       await user.save();
     }
