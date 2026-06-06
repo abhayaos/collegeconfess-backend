@@ -71,10 +71,17 @@ exports.create = async (req, res) => {
     text = profanityFilter(sanitize(text || ''));
     title = profanityFilter(sanitize(title || ''));
     const ipHash = hashIP(req.ip);
-    const recent = await Confession.findOne({ ipHash })
-      .sort({ createdAt: -1 });
-    if (recent && Date.now() - new Date(recent.createdAt).getTime() < 30000) {
-      return res.status(429).json({ message: 'Please wait 30 seconds before posting again' });
+
+    const userId = req.user ? req.user.username : null;
+    const user = userId ? await User.findOne({ username: userId }) : null;
+    const isPremium = user?.premium === true;
+
+    if (!isPremium) {
+      const recent = await Confession.findOne({ ipHash })
+        .sort({ createdAt: -1 });
+      if (recent && Date.now() - new Date(recent.createdAt).getTime() < 30000) {
+        return res.status(429).json({ message: 'Please wait 30 seconds before posting again' });
+      }
     }
 
     const allowedCategories = ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret', 'relationship', 'funny', 'regret', 'college', 'teacher', 'hostel'];
@@ -82,10 +89,6 @@ exports.create = async (req, res) => {
       return res.status(400).json({ message: 'Invalid category' });
     }
 
-    const userId = req.user ? req.user.username : null;
-
-    const user = userId ? await User.findOne({ username: userId }) : null;
-    const isPremium = user?.premium === true;
     const isAd = req.body.isAd === true && isPremium;
 
     const confession = await Confession.create({
