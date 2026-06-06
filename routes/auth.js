@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const Confession = require('../models/Confession');
@@ -13,6 +14,10 @@ const router = express.Router();
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
 
 const emojis = [
   '😶','🙂','😎','🫠','🥸','🤓','💤','🌚','👀','🐼','🐸','🐱','🦊','🐧','🦥',
@@ -168,6 +173,68 @@ router.post('/google', rateLimiter, async (req, res) => {
   }
 });
 
+router.get('/discord/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?error=no_code`);
+    }
+
+    const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      client_secret: DISCORD_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: DISCORD_REDIRECT_URI,
+    }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    const { access_token } = tokenResponse.data;
+
+    const userResponse = await axios.get('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    const { id: discordId, global_name, username: discordUsername } = userResponse.data;
+
+    let user = await User.findOne({ discordId });
+
+    if (user) {
+      const { accessToken, refreshToken } = generateTokens(user);
+      setRefreshCookie(res, refreshToken);
+      setAccessCookie(res, accessToken);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?login=success`);
+    }
+
+    const baseUsername = discordUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let username = baseUsername;
+    let counter = 1;
+    while (await User.findOne({ username })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+    }
+
+    user = await User.create({
+      username,
+      discordId,
+      name: global_name || discordUsername || 'Discord User',
+      authProvider: 'discord',
+      verificationStatus: 'pending',
+      avatar: randomEmoji(),
+    });
+
+    const { accessToken, refreshToken } = generateTokens(user);
+    setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
+
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/onboard`);
+  } catch (err) {
+    console.error('Discord auth error:', err);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?error=discord_auth_failed`);
+  }
+});
+
 router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
   try {
     const { name, gender, idCard } = req.body;
@@ -263,12 +330,17 @@ router.post('/register', rateLimiter, async (req, res) => {
 
 router.post('/login', rateLimiter, async (req, res) => {
   try {
-    const { username, password, collegeId } = req.body;
+    const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    const user = await User.findOne({ username: username.toLowerCase() });
+    const user = await User.findOne({
+      $or: [
+        { username: username.toLowerCase() },
+        { email: username.toLowerCase() },
+      ],
+    });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -278,14 +350,10 @@ router.post('/login', rateLimiter, async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    if (user.collegeId && user.collegeId !== collegeId?.toUpperCase()) {
-      return res.status(401).json({ message: 'College ID does not match' });
-    }
-
     const { accessToken, refreshToken } = generateTokens(user);
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
-    res.json({ token: accessToken, user: userData(user) });
+    return res.json({ token: accessToken, user: userData(user) });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });

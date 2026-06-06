@@ -80,6 +80,10 @@ app.use((err, req, res, next) => {
 
 app.use('/api/confessions', confessionRoutes);
 app.use('/api/auth', authRoutes);
+app.get('/auth/discord/callback', (req, res) => {
+  const qs = Object.entries(req.query).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  res.redirect(307, `/api/auth/discord/callback${qs ? '?' + qs : ''}`);
+});
 app.use('/api/colleges', collegeRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/logs', logRoutes);
