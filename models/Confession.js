@@ -9,7 +9,7 @@ const commentSchema = new mongoose.Schema({
 const confessionSchema = new mongoose.Schema({
   shortId: { type: String, required: true, unique: true },
   title: { type: String, maxlength: 100 },
-  text: { type: String, default: '', maxlength: 5000 },
+  text: { type: String, default: '' },
   category: {
     type: String,
     enum: ['love', 'crush', 'study', 'academic', 'friendship', 'rant', 'secret', 'relationship', 'funny', 'regret', 'college', 'teacher', 'hostel'],

