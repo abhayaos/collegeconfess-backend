@@ -4,6 +4,7 @@ const commentSchema = new mongoose.Schema({
   text: { type: String, required: true, maxlength: 200 },
   createdAt: { type: Date, default: Date.now },
   parentId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  isAuthor: { type: Boolean, default: false },
 });
 
 const confessionSchema = new mongoose.Schema({
