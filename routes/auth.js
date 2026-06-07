@@ -106,6 +106,36 @@ router.post('/set-password', rateLimiter, authenticate, async (req, res) => {
   }
 });
 
+router.post('/admin/set-password/:username', rateLimiter, authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findOne({ username: req.params.username.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    await Log.create({
+      action: 'set-password',
+      target: 'user',
+      targetId: user.username,
+      adminId: req.user.id,
+      details: `Admin set password for user ${user.username}`,
+    });
+
+    res.json({ message: 'Password set successfully' });
+  } catch (err) {
+    console.error('Admin set password error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/google', rateLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
