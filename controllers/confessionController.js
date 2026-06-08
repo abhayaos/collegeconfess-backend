@@ -222,11 +222,15 @@ exports.getStats = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    const confession = await Confession.findOneAndUpdate(
-      findByIdOrShortId(req.params.id),
-      { $inc: { views: 1 } },
-      { new: true, projection: { likedIPs: 0, likedBy: 0, savedBy: 0, ipHash: 0 } }
-    ).lean();
+    const ipHash = hashIP(req.ip);
+    const query = findByIdOrShortId(req.params.id);
+
+    await Confession.findOneAndUpdate(
+      { ...query, viewedIPs: { $ne: ipHash } },
+      { $inc: { views: 1 }, $push: { viewedIPs: ipHash } }
+    );
+
+    const confession = await Confession.findOne(query, { likedIPs: 0, likedBy: 0, savedBy: 0, ipHash: 0, viewedIPs: 0 }).lean();
     if (!confession) return res.status(404).json({ message: 'Not found' });
     res.json(confession);
   } catch (err) {
@@ -236,12 +240,18 @@ exports.getOne = async (req, res) => {
 
 exports.recordView = async (req, res) => {
   try {
+    const ipHash = hashIP(req.ip);
+    const query = findByIdOrShortId(req.params.id);
+
     const result = await Confession.findOneAndUpdate(
-      findByIdOrShortId(req.params.id),
-      { $inc: { views: 1 } },
+      { ...query, viewedIPs: { $ne: ipHash } },
+      { $inc: { views: 1 }, $push: { viewedIPs: ipHash } },
       { projection: { _id: 1 } }
     );
-    if (!result) return res.status(404).json({ message: 'Not found' });
+    if (!result) {
+      const exists = await Confession.findOne(query, { _id: 1 });
+      if (!exists) return res.status(404).json({ message: 'Not found' });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });

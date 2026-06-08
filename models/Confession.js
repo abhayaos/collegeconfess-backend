@@ -30,6 +30,7 @@ const confessionSchema = new mongoose.Schema({
   adLink: { type: String },
   verified: { type: Boolean, default: false },
   views: { type: Number, default: 0 },
+  viewedIPs: [{ type: String }],
 }, { timestamps: true });
 
 confessionSchema.index({ text: 'text' });
