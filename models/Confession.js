@@ -29,6 +29,7 @@ const confessionSchema = new mongoose.Schema({
   isAd: { type: Boolean, default: false },
   adLink: { type: String },
   verified: { type: Boolean, default: false },
+  views: { type: Number, default: 0 },
 }, { timestamps: true });
 
 confessionSchema.index({ text: 'text' });

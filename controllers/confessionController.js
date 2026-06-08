@@ -9,7 +9,7 @@ const cache = require('../utils/cache');
 
 const FEED_PROJECTION = {
   text: 1, title: 1, category: 1, anonymousName: 1,
-  collegeId: 1, likes: 1, comments: 1, createdAt: 1, isAd: 1, adLink: 1, shortId: 1, userId: 1, isPremium: 1,
+  collegeId: 1, likes: 1, comments: 1, createdAt: 1, isAd: 1, adLink: 1, shortId: 1, userId: 1, isPremium: 1, views: 1,
 };
 
 function findByIdOrShortId(id) {
@@ -222,9 +222,27 @@ exports.getStats = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    const confession = await Confession.findOne(findByIdOrShortId(req.params.id)).lean();
+    const confession = await Confession.findOneAndUpdate(
+      findByIdOrShortId(req.params.id),
+      { $inc: { views: 1 } },
+      { new: true, projection: { likedIPs: 0, likedBy: 0, savedBy: 0, ipHash: 0 } }
+    ).lean();
     if (!confession) return res.status(404).json({ message: 'Not found' });
     res.json(confession);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.recordView = async (req, res) => {
+  try {
+    const result = await Confession.findOneAndUpdate(
+      findByIdOrShortId(req.params.id),
+      { $inc: { views: 1 } },
+      { projection: { _id: 1 } }
+    );
+    if (!result) return res.status(404).json({ message: 'Not found' });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -526,6 +544,33 @@ exports.addLikes = async (req, res) => {
     res.json({ likes: confession.likes });
   } catch (err) {
     console.error('addLikes error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.addViews = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || typeof amount !== 'number' || amount < 1 || !Number.isInteger(amount)) {
+      return res.status(400).json({ message: 'Amount must be a positive integer' });
+    }
+    if (amount > 100000) {
+      return res.status(400).json({ message: 'Amount cannot exceed 100,000' });
+    }
+    const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
+    if (!confession) {
+      return res.status(404).json({ message: 'Confession not found' });
+    }
+    confession.views += amount;
+    await confession.save();
+    cache.delPattern('feed:*').catch(() => {});
+    if (req.app.get('io')) {
+      req.app.get('io').emit('update-confession', confession);
+    }
+    await Log.create({ action: 'add-views', target: 'confession', targetId: confession.shortId, adminId: req.user.id, details: `Added ${amount} views to confession ${confession.shortId}` });
+    res.json({ views: confession.views });
+  } catch (err) {
+    console.error('addViews error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
