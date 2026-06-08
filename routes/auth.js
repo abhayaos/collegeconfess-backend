@@ -193,10 +193,10 @@ router.post('/google', rateLimiter, async (req, res) => {
     const uData = userData(user);
 
     if (!user.gender) {
-      return res.json({ token: accessToken, user: uData, onboarding: true });
+      return res.json({ token: accessToken, refreshToken, user: uData, onboarding: true });
     }
 
-    return res.json({ token: accessToken, user: uData, onboarding: false });
+    return res.json({ token: accessToken, refreshToken, user: uData, onboarding: false });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ message: 'Invalid Google credential' });
@@ -298,7 +298,7 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
 
-    res.json({ token: accessToken, user: userData(user) });
+    res.json({ token: accessToken, refreshToken, user: userData(user) });
   } catch (err) {
     console.error('Onboard error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -353,7 +353,7 @@ router.post('/register', rateLimiter, async (req, res) => {
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
 
-    res.status(201).json({ token: accessToken, user: userData(user) });
+    res.status(201).json({ token: accessToken, refreshToken, user: userData(user) });
   } catch (err) {
     console.error('Register error:', err);
     if (err.code === 11000) {
@@ -395,7 +395,7 @@ router.post('/login', rateLimiter, async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user);
     setRefreshCookie(res, refreshToken);
     setAccessCookie(res, accessToken);
-    return res.json({ token: accessToken, user: userData(user) });
+    return res.json({ token: accessToken, refreshToken, user: userData(user) });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -403,7 +403,10 @@ router.post('/login', rateLimiter, async (req, res) => {
 });
 
 router.post('/refresh', rateLimiter, async (req, res) => {
-  const token = req.cookies?.refreshToken;
+  let token = req.cookies?.refreshToken;
+  if (!token && req.body?.refreshToken) {
+    token = req.body.refreshToken;
+  }
   if (!token) {
     return res.json({ user: null });
   }
@@ -421,6 +424,7 @@ router.post('/refresh', rateLimiter, async (req, res) => {
     setAccessCookie(res, tokens.accessToken);
     return res.json({
       token: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: userData(user),
       needsOnboarding: !user.gender,
       collegeId: user.collegeId,
@@ -498,7 +502,7 @@ router.put('/me', rateLimiter, authenticate, async (req, res) => {
     const tokens = generateTokens(user);
     setAccessCookie(res, tokens.accessToken);
     setRefreshCookie(res, tokens.refreshToken);
-    res.json({ token: tokens.accessToken, user: userData(user) });
+    res.json({ token: tokens.accessToken, refreshToken: tokens.refreshToken, user: userData(user) });
   } catch (err) {
     console.error('Update profile error:', err);
     res.status(500).json({ message: 'Server error' });

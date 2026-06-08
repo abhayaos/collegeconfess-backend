@@ -3,7 +3,13 @@ const User = require('../models/User');
 require('dotenv/config');
 
 async function authenticate(req, res, next) {
-  const token = req.cookies?.accessToken;
+  let token = req.cookies?.accessToken;
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7);
+    }
+  }
   if (!token) {
     return res.status(401).json({ message: 'Authentication required' });
   }
