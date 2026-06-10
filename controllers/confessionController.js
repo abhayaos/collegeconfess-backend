@@ -321,8 +321,8 @@ exports.unlike = async (req, res) => {
 
 exports.getLikedIds = async (req, res) => {
   try {
-    if (!req.user?.id) return res.json({ ids: [] });
-    const confessions = await Confession.find({ likedBy: req.user.id }, { shortId: 1, _id: 0 });
+    const ipHash = hashIP(req.ip);
+    const confessions = await Confession.find({ likedIPs: ipHash }, { shortId: 1, _id: 0 });
     const ids = confessions.map((c) => c.shortId);
     res.json({ ids });
   } catch (err) {
