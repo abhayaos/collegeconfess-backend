@@ -26,6 +26,7 @@ router.post('/:id/unlike', rateLimiter, ctrl.unlike);
 router.post('/:id/save', rateLimiter, authenticate, ctrl.save);
 router.post('/:id/unsave', rateLimiter, authenticate, ctrl.unsave);
 router.post('/:id/comment', rateLimiter, ctrl.comment);
+router.post('/:id/comment/:commentId/reply', rateLimiter, ctrl.reply);
 
 
 module.exports = router;

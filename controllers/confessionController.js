@@ -383,7 +383,7 @@ exports.getSaved = async (req, res) => {
 
 exports.comment = async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, parentId } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Comment text is required' });
     }
@@ -391,7 +391,7 @@ exports.comment = async (req, res) => {
     if (!confession) return res.status(404).json({ message: 'Not found' });
     const ipHash = hashIP(req.ip);
     const isAuthor = confession.ipHash && ipHash === confession.ipHash;
-    confession.comments.push({ text: profanityFilter(sanitize(text)), isAuthor });
+    confession.comments.push({ text: profanityFilter(sanitize(text)), parentId: parentId || null, isAuthor });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
@@ -428,7 +428,8 @@ exports.reply = async (req, res) => {
     const parentComment = confession.comments.id(req.params.commentId);
     if (!parentComment) return res.status(404).json({ message: 'Comment not found' });
 
-    const isAuthor = req.user && req.user.username && req.user.username === confession.userId;
+    const ipHash = hashIP(req.ip);
+    const isAuthor = confession.ipHash && ipHash === confession.ipHash;
     confession.comments.push({ text: profanityFilter(sanitize(text)), parentId: parentComment._id, isAuthor });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
@@ -450,7 +451,8 @@ exports.reply = async (req, res) => {
 
     res.status(201).json(confession);
   } catch (err) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('reply error:', err);
+    res.status(500).json({ message: 'Server error: ' + err.message });
   }
 };
 
