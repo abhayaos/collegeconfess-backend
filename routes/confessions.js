@@ -1,12 +1,11 @@
 const express = require('express');
 const ctrl = require('../controllers/confessionController');
 const rateLimiter = require('../middleware/rateLimiter');
-const { requireVerified } = require('../middleware/verification');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/', rateLimiter.strict, authenticate, requireVerified, ctrl.create);
+router.post('/', rateLimiter.strict, authenticate, ctrl.create);
 router.get('/', rateLimiter, ctrl.getAll);
 router.get('/stats', rateLimiter, ctrl.getStats);
 router.get('/trending', rateLimiter, ctrl.trending);
@@ -22,11 +21,11 @@ router.post('/:id/add-likes', authenticate, requireAdmin, ctrl.addLikes);
 router.post('/:id/add-views', authenticate, requireAdmin, ctrl.addViews);
 router.get('/:id', rateLimiter, ctrl.getOne);
 router.post('/:id/view', rateLimiter, ctrl.recordView);
-router.post('/:id/like', rateLimiter, authenticate, requireVerified, ctrl.like);
-router.post('/:id/unlike', rateLimiter, authenticate, requireVerified, ctrl.unlike);
-router.post('/:id/save', rateLimiter, authenticate, requireVerified, ctrl.save);
-router.post('/:id/unsave', rateLimiter, authenticate, requireVerified, ctrl.unsave);
-router.post('/:id/comment', rateLimiter, authenticate, requireVerified, ctrl.comment);
-router.post('/:id/comment/:commentId/reply', rateLimiter, authenticate, requireVerified, ctrl.reply);
+router.post('/:id/like', rateLimiter, authenticate, ctrl.like);
+router.post('/:id/unlike', rateLimiter, authenticate, ctrl.unlike);
+router.post('/:id/save', rateLimiter, authenticate, ctrl.save);
+router.post('/:id/unsave', rateLimiter, authenticate, ctrl.unsave);
+router.post('/:id/comment', rateLimiter, authenticate, ctrl.comment);
+router.post('/:id/comment/:commentId/reply', rateLimiter, authenticate, ctrl.reply);
 
 module.exports = router;

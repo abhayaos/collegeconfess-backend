@@ -267,7 +267,7 @@ router.get('/discord/callback', async (req, res) => {
 
 router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
   try {
-    const { name, gender, idCard } = req.body;
+    const { name, gender } = req.body;
     if (!name || !gender) {
       return res.status(400).json({ message: 'Name and gender are required' });
     }
@@ -277,9 +277,6 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
     if (name.length > 100) {
       return res.status(400).json({ message: 'Name too long' });
     }
-    if (idCard && idCard.length > 5000000) {
-      return res.status(400).json({ message: 'ID card image too large' });
-    }
 
     const user = await User.findOne({ username: req.user.id });
     if (!user) {
@@ -288,10 +285,6 @@ router.post('/onboard', rateLimiter, authenticate, async (req, res) => {
 
     user.name = name.trim();
     user.gender = gender;
-    if (idCard) {
-      user.idCard = idCard;
-    }
-    user.verificationStatus = 'pending';
     await user.save();
 
     const { accessToken, refreshToken } = generateTokens(user);
