@@ -390,7 +390,7 @@ exports.comment = async (req, res) => {
     const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
     const isAuthor = req.user && req.user.username && req.user.username === confession.userId;
-    confession.comments.push({ text: profanityFilter(sanitize(text)).slice(0, 200), isAuthor });
+    confession.comments.push({ text: profanityFilter(sanitize(text)), isAuthor });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
@@ -428,7 +428,7 @@ exports.reply = async (req, res) => {
     if (!parentComment) return res.status(404).json({ message: 'Comment not found' });
 
     const isAuthor = req.user && req.user.username && req.user.username === confession.userId;
-    confession.comments.push({ text: profanityFilter(sanitize(text)).slice(0, 200), parentId: parentComment._id, isAuthor });
+    confession.comments.push({ text: profanityFilter(sanitize(text)), parentId: parentComment._id, isAuthor });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
