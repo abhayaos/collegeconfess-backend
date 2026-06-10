@@ -389,13 +389,14 @@ exports.comment = async (req, res) => {
     }
     const confession = await Confession.findOne(findByIdOrShortId(req.params.id));
     if (!confession) return res.status(404).json({ message: 'Not found' });
-    const isAuthor = req.user && req.user.username && req.user.username === confession.userId;
+    const ipHash = hashIP(req.ip);
+    const isAuthor = confession.ipHash && ipHash === confession.ipHash;
     confession.comments.push({ text: profanityFilter(sanitize(text)), isAuthor });
     await confession.save();
     req.app.get('io').emit('update-confession', confession);
 
     const userId = req.user ? req.user.username : null;
-    if (confession.userId && confession.userId !== userId) {
+    if (confession.userId && confession.userId !== userId && !isAuthor) {
       const notification = await Notification.create({
         userId: confession.userId,
         type: 'comment',
