@@ -28,7 +28,6 @@ const confessionSchema = new mongoose.Schema({
   isPremium: { type: Boolean, default: false },
   isAd: { type: Boolean, default: false },
   adLink: { type: String },
-  verified: { type: Boolean, default: false },
   views: { type: Number, default: 0 },
   viewedIPs: [{ type: String }],
 }, { timestamps: true });

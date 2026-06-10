@@ -71,7 +71,6 @@ function userData(user) {
     email: user.email,
     role: user.role,
     authProvider: user.authProvider,
-    verificationStatus: user.verificationStatus,
     gender: user.gender,
     collegeId: user.collegeId,
     hasPassword: !!user.password,
@@ -176,7 +175,6 @@ router.post('/google', rateLimiter, async (req, res) => {
         email,
         name: googleName || 'User',
         authProvider: 'google',
-        verificationStatus: 'pending',
         avatar: randomEmoji(),
       });
     }
@@ -250,7 +248,6 @@ router.get('/discord/callback', async (req, res) => {
       discordId,
       name: global_name || discordUsername || 'Discord User',
       authProvider: 'discord',
-      verificationStatus: 'pending',
       avatar: randomEmoji(),
     });
 
@@ -333,7 +330,6 @@ router.post('/register', rateLimiter, async (req, res) => {
       name: name.trim(),
       email: email ? email.toLowerCase() : undefined,
       authProvider: 'local',
-      verificationStatus: 'pending',
       avatar: randomEmoji(),
     });
 
@@ -442,7 +438,7 @@ router.post('/logout', rateLimiter, async (req, res) => {
 
 router.get('/me', authenticate, async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.user.id }).select('-password -idCard');
+    const user = await User.findOne({ username: req.user.id }).select('-password');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -454,12 +450,12 @@ router.get('/me', authenticate, async (req, res) => {
 
 router.get('/user/:username', rateLimiter, async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role verificationStatus gender createdAt collegeId avatar');
+    const user = await User.findOne({ username: req.params.username.toLowerCase() }).select('username name role gender createdAt collegeId avatar');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
     const uData = userData(user);
-    res.json({ id: uData.id, name: uData.name, role: uData.role, verificationStatus: uData.verificationStatus, gender: uData.gender, createdAt: user.createdAt, collegeId: uData.collegeId, avatar: uData.avatar });
+    res.json({ id: uData.id, name: uData.name, role: uData.role, gender: uData.gender, createdAt: user.createdAt, collegeId: uData.collegeId, avatar: uData.avatar });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -504,7 +500,7 @@ router.put('/me', rateLimiter, authenticate, async (req, res) => {
 
 router.get('/users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
   try {
-    const users = await User.find().select('-password -idCard');
+    const users = await User.find().select('-password');
     res.json(users.map(u => userData(u)));
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -600,51 +596,6 @@ router.delete('/users/:username', rateLimiter, authenticate, requireAdmin, async
     await Log.create({ action: 'delete-user', target: 'user', targetId: username, adminId: req.user.id, details: `Deleted user ${username}` });
     req.app.get('io')?.emit('users-changed', { action: 'delete', username });
     res.json({ message: 'User deleted' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-router.get('/verify-users', rateLimiter, authenticate, requireAdmin, async (req, res) => {
-  try {
-    const users = await User.find({
-      verificationStatus: { $in: ['pending', 'verified', 'rejected'] },
-    }).select('-password').sort({ createdAt: -1 });
-    res.json(users.map(u => ({ ...userData(u), username: u.username, idCard: u.idCard })));
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-router.put('/verify-user/:id', rateLimiter, authenticate, requireAdmin, async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!['verified', 'rejected'].includes(status)) {
-      return res.status(400).json({ message: 'Status must be verified or rejected' });
-    }
-
-    const user = await User.findOne({ username: req.params.id.toLowerCase() });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    user.verificationStatus = status;
-    await user.save();
-
-    await Log.create({
-      action: 'verify-user',
-      target: 'user',
-      targetId: user.username,
-      adminId: req.user.id,
-      details: `${status === 'verified' ? 'Approved' : 'Rejected'} verification for user ${user.username}`,
-    });
-
-    req.app.get('io')?.emit('user-verified', { username: user.username, status });
-    res.json({
-      id: user.username,
-      name: user.name,
-      verificationStatus: user.verificationStatus,
-    });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }

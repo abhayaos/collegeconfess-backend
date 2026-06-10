@@ -45,15 +45,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['male', 'female', 'other'],
   },
-  idCard: {
-    type: String,
-    maxlength: 5000000,
-  },
-  verificationStatus: {
-    type: String,
-    enum: ['pending', 'verified', 'rejected'],
-    default: 'pending',
-  },
+
   avatar: {
     type: String,
   },
